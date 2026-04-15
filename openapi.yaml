@@ -1,0 +1,2767 @@
+openapi: 3.1.0
+info:
+  title: Noesis API
+  version: 1.0.0
+  description: |
+    Noesis provides deep on-chain analytics for Solana and Base tokens and wallets.
+    It combines data from multiple sources (GMGN, DexScreener, Helius, Solscan) into
+    enriched, actionable intelligence for traders and researchers.
+
+    ## Authentication
+
+    Noesis uses two authentication mechanisms:
+
+    1. **JWT Session** — Obtained via SIWS (Sign In With Solana) challenge/verify flow.
+       Used for key management endpoints. Pass as `Authorization: Bearer <jwt>`.
+    2. **API Key** — Created via the key management endpoints. Used for all data endpoints.
+       Pass as `X-API-Key: se_...` header or `Authorization: Bearer se_...`.
+
+    ## Rate Limiting
+
+    Endpoints are classified as **Light** (1 request/second) or **Heavy** (1 request/minute).
+    Exceeding limits returns HTTP 429 with details about the limit and type.
+
+    ## Chain Support
+
+    Most endpoints accept an optional `chain` query parameter (`sol` or `base`, default `sol`).
+  contact:
+    name: Noesis
+    url: https://noesisapi.dev
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://noesisapi.dev
+    description: Production
+
+tags:
+  - name: Auth
+    description: SIWS authentication flow (no rate limit)
+  - name: Key Management
+    description: API key CRUD and usage stats (requires JWT session)
+  - name: Health & Stats
+    description: Public health checks and platform statistics
+  - name: Token Analysis
+    description: Deep token analytics, holder analysis, and security checks
+  - name: Wallet Analysis
+    description: Wallet profiling, history, and connections
+  - name: Cross-Token Analysis
+    description: Cross-token holder and trader overlap detection
+  - name: On-Chain Data
+    description: Direct on-chain account and transaction data
+  - name: Analytics Proxy
+    description: GMGN analytics data proxy
+  - name: Solana RPC Proxy
+    description: Solana RPC and DAS API proxy
+  - name: AI Chat
+    description: AI-powered on-chain research assistant
+
+paths:
+  # ──────────────────────────────────────────────
+  # Auth
+  # ──────────────────────────────────────────────
+  /api/v1/auth/challenge:
+    post:
+      operationId: createChallenge
+      tags: [Auth]
+      summary: Request a SIWS sign-in challenge
+      description: |
+        Generates a nonce and a human-readable message that the wallet must sign
+        to prove ownership. The nonce is single-use and expires after 5 minutes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wallet]
+              properties:
+                wallet:
+                  type: string
+                  description: Base58-encoded Solana public key
+                  example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+            example:
+              wallet: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+      responses:
+        "200":
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce, message]
+                properties:
+                  nonce:
+                    type: string
+                    format: uuid
+                    description: Single-use nonce
+                    example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+                  message:
+                    type: string
+                    description: Human-readable message for the wallet to sign
+                    example: "Sign in to Noesis with wallet 7xKXtg..."
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/auth/verify:
+    post:
+      operationId: verifySignature
+      tags: [Auth]
+      summary: Verify wallet signature and obtain JWT
+      description: |
+        Submits the Ed25519 signature of the challenge message. On success,
+        returns a JWT session token valid for 24 hours.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [wallet, signature]
+              properties:
+                wallet:
+                  type: string
+                  description: Base58-encoded Solana public key
+                  example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+                signature:
+                  type: string
+                  description: Base58-encoded Ed25519 signature of the challenge message
+                  example: 3ASDf...base58sig
+            example:
+              wallet: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+              signature: 3ASDf...base58sig
+      responses:
+        "200":
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, wallet, expires_at]
+                properties:
+                  token:
+                    type: string
+                    description: JWT session token
+                    example: eyJhbGciOiJIUzI1NiIs...
+                  wallet:
+                    type: string
+                    description: Authenticated wallet public key
+                    example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: Token expiration timestamp
+                    example: "2026-03-29T12:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/auth/me:
+    get:
+      operationId: getMe
+      tags: [Auth]
+      summary: Get current session info
+      description: Returns the authenticated wallet address and session metadata.
+      security:
+        - BearerJwt: []
+      responses:
+        "200":
+          description: Session info
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [wallet, is_admin, expires_at]
+                properties:
+                  wallet:
+                    type: string
+                    example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+                  is_admin:
+                    type: boolean
+                    example: false
+                  expires_at:
+                    type: string
+                    format: date-time
+                    example: "2026-03-29T12:00:00Z"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ──────────────────────────────────────────────
+  # Key Management
+  # ──────────────────────────────────────────────
+  /api/v1/keys:
+    post:
+      operationId: createApiKey
+      tags: [Key Management]
+      summary: Create a new API key
+      security:
+        - BearerJwt: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                  description: Human-readable label for the key
+                  example: My trading bot
+            example:
+              name: My trading bot
+      responses:
+        "201":
+          description: API key created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyFull"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      operationId: listApiKeys
+      tags: [Key Management]
+      summary: List all API keys for the authenticated wallet
+      security:
+        - BearerJwt: []
+      responses:
+        "200":
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKeyFull"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/keys/{id}:
+    delete:
+      operationId: deleteApiKey
+      tags: [Key Management]
+      summary: Delete an API key
+      security:
+        - BearerJwt: []
+      parameters:
+        - $ref: "#/components/parameters/KeyId"
+      responses:
+        "200":
+          description: Key deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success]
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/keys/{id}/usage:
+    get:
+      operationId: getApiKeyUsage
+      tags: [Key Management]
+      summary: Get usage statistics for an API key
+      security:
+        - BearerJwt: []
+      parameters:
+        - $ref: "#/components/parameters/KeyId"
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [4h, 24h, 7d, 30d]
+            default: 24h
+          description: Time period for usage stats
+      responses:
+        "200":
+          description: Usage statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyUsage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ──────────────────────────────────────────────
+  # Health & Stats
+  # ──────────────────────────────────────────────
+  /api/v1/health:
+    get:
+      operationId: healthCheck
+      tags: [Health & Stats]
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /api/v1/stats:
+    get:
+      operationId: getStats
+      tags: [Health & Stats]
+      summary: Platform-wide statistics
+      responses:
+        "200":
+          description: Aggregate stats
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total_requests, api_keys_created, tokens_analyzed, wallets_analyzed]
+                properties:
+                  total_requests:
+                    type: integer
+                    format: int64
+                    example: 1523847
+                  api_keys_created:
+                    type: integer
+                    format: int64
+                    example: 342
+                  tokens_analyzed:
+                    type: integer
+                    format: int64
+                    example: 89412
+                  wallets_analyzed:
+                    type: integer
+                    format: int64
+                    example: 254103
+
+  /api/v1/skill.md:
+    get:
+      operationId: getSkillMd
+      tags: [Health & Stats]
+      summary: AI skill definition (Markdown)
+      description: Returns a Markdown document describing Noesis capabilities for AI agents.
+      responses:
+        "200":
+          description: Markdown content
+          content:
+            text/markdown:
+              schema:
+                type: string
+
+  /llms.txt:
+    get:
+      operationId: getLlmsTxt
+      tags: [Health & Stats]
+      summary: LLMs.txt file
+      description: Returns a plain-text file for LLM discovery.
+      responses:
+        "200":
+          description: Plain text content
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  # ──────────────────────────────────────────────
+  # Token Analysis — Light
+  # ──────────────────────────────────────────────
+  /api/v1/token/{addr}/preview:
+    get:
+      operationId: tokenPreview
+      tags: [Token Analysis]
+      summary: Quick token preview
+      description: Returns basic token info from aggregated sources. Lightweight and fast.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Token preview
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/info:
+    get:
+      operationId: tokenInfo
+      tags: [Token Analysis]
+      summary: Detailed on-chain token metadata
+      description: |
+        Returns on-chain metadata including authorities, supply details, and parsed asset data.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Token info
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, chain, metadata, authorities, supply]
+                properties:
+                  address:
+                    type: string
+                    example: So11111111111111111111111111111111111111112
+                  chain:
+                    type: string
+                    enum: [sol, base]
+                    example: sol
+                  metadata:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        example: Wrapped SOL
+                      symbol:
+                        type: string
+                        example: SOL
+                      description:
+                        type: string
+                      image:
+                        type: string
+                        format: uri
+                      decimals:
+                        type: integer
+                        example: 9
+                  authorities:
+                    type: object
+                    properties:
+                      mint_authority:
+                        type: string
+                        nullable: true
+                      freeze_authority:
+                        type: string
+                        nullable: true
+                      update_authority:
+                        type: string
+                        nullable: true
+                  supply:
+                    type: object
+                    properties:
+                      amount:
+                        type: string
+                        description: Raw supply as string to avoid precision loss
+                      decimals:
+                        type: integer
+                      ui_amount:
+                        type: number
+                  price:
+                    type: number
+                    nullable: true
+                    description: Current price in USD
+                  raw_asset:
+                    type: object
+                    nullable: true
+                    description: Raw DAS asset response
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/holders:
+    get:
+      operationId: tokenHolders
+      tags: [Token Analysis]
+      summary: Paginated token holders list
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+          description: Number of holders to return
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor from previous response
+      responses:
+        "200":
+          description: Holders list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mint, total_returned, holders]
+                properties:
+                  mint:
+                    type: string
+                  total_returned:
+                    type: integer
+                  holders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        token_account:
+                          type: string
+                        owner:
+                          type: string
+                        amount:
+                          type: integer
+                          format: uint64
+                        is_escrow:
+                          type: boolean
+                  next_cursor:
+                    type: string
+                    nullable: true
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # Token Analysis — Heavy
+  # ──────────────────────────────────────────────
+  /api/v1/token/{addr}/scan:
+    get:
+      operationId: tokenScan
+      tags: [Token Analysis]
+      summary: Comprehensive token scan
+      description: |
+        Full token analysis combining token info, DexScreener pair data, top traders,
+        security checks, token statistics, and holder breakdown. This is the most
+        complete single-call token analysis endpoint.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Full scan result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  dexscreener:
+                    $ref: "#/components/schemas/DexPair"
+                  top_traders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScanTrader"
+                  security:
+                    $ref: "#/components/schemas/SecurityInfo"
+                  token_stat:
+                    $ref: "#/components/schemas/TokenStat"
+                  holder_stat:
+                    $ref: "#/components/schemas/HolderStat"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/top-holders:
+    get:
+      operationId: tokenTopHolders
+      tags: [Token Analysis]
+      summary: Top holders with wallet enrichment
+      description: |
+        Returns the largest holders enriched with wallet data, profit stats,
+        funding sources, and Solscan labels/tags.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Enriched top holders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, holders]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  holders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/HolderEntry"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/bundles:
+    get:
+      operationId: tokenBundles
+      tags: [Token Analysis]
+      summary: Bundle analysis
+      description: |
+        Detects bundled transactions at launch, showing token statistics
+        and holder category breakdowns (snipers, bots, insiders, etc.).
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Bundle analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, token_stat]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  token_stat:
+                    $ref: "#/components/schemas/TokenStat"
+                  holder_stat:
+                    $ref: "#/components/schemas/HolderStat"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/fresh-wallets:
+    get:
+      operationId: tokenFreshWallets
+      tags: [Token Analysis]
+      summary: Fresh wallet detection
+      description: |
+        Identifies recently-created wallets holding the token, categorized by age.
+        Useful for detecting coordinated buying or sybil attacks.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Fresh wallet analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, total_supply, fresh_count, total_analyzed, supply_controlled, wallets]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  total_supply:
+                    type: number
+                  fresh_count:
+                    type: integer
+                  total_analyzed:
+                    type: integer
+                  supply_controlled:
+                    type: number
+                    description: Percentage of supply held by fresh wallets
+                  wallets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AnalyzedWalletEntry"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/team-supply:
+    get:
+      operationId: tokenTeamSupply
+      tags: [Token Analysis]
+      summary: Team/insider supply detection
+      description: |
+        Identifies wallets likely controlled by the token team based on funding
+        patterns and transaction behavior. Same response shape as fresh-wallets
+        but uses `team_count` instead of `fresh_count`.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Team supply analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, total_supply, team_count, total_analyzed, supply_controlled, wallets]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  total_supply:
+                    type: number
+                  team_count:
+                    type: integer
+                  total_analyzed:
+                    type: integer
+                  supply_controlled:
+                    type: number
+                  wallets:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AnalyzedWalletEntry"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/dev-profile:
+    get:
+      operationId: tokenDevProfile
+      tags: [Token Analysis]
+      summary: Token creator profile
+      description: |
+        Profiles the token creator including their wallet data, previously
+        created coins, and funding source.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Developer profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, creator]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  creator:
+                    type: string
+                    description: Creator wallet address
+                  wallet_data:
+                    $ref: "#/components/schemas/WalletData"
+                  wallet_info:
+                    $ref: "#/components/schemas/WalletInfo"
+                  created_coins:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        mint:
+                          type: string
+                        name:
+                          type: string
+                        symbol:
+                          type: string
+                        market_cap:
+                          type: number
+                        usd_market_cap:
+                          type: number
+                        complete:
+                          type: boolean
+                          description: Whether the token graduated from bonding curve
+                        created_timestamp:
+                          type: integer
+                          description: Unix timestamp
+                  funding:
+                    type: object
+                    nullable: true
+                    properties:
+                      funder:
+                        type: string
+                      funder_name:
+                        type: string
+                      amount:
+                        type: number
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/best-traders:
+    get:
+      operationId: tokenBestTraders
+      tags: [Token Analysis]
+      summary: Best traders for a token
+      description: |
+        Returns the most profitable traders for a token, enriched with
+        wallet labels, social profiles, and suspicion flags.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Best traders
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, traders]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  traders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BestTraderEntry"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/early-buyers:
+    get:
+      operationId: tokenEarlyBuyers
+      tags: [Token Analysis]
+      summary: Early buyers within a time window
+      description: |
+        Scans on-chain transactions to find wallets that bought the token
+        within the specified number of hours after creation. Uses Helius
+        transaction history for accurate results.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+        - name: hours
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0.1
+            maximum: 24.0
+            default: 1
+          description: Time window in hours after token creation
+      responses:
+        "200":
+          description: Early buyers
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, hours, total_transactions_scanned, buyers]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  hours:
+                    type: number
+                  total_transactions_scanned:
+                    type: integer
+                  buyers:
+                    type: array
+                    items:
+                      type: object
+                      required: [address, signature, sol_spent, token_amount, timestamp]
+                      properties:
+                        address:
+                          type: string
+                        signature:
+                          type: string
+                        sol_spent:
+                          type: number
+                        token_amount:
+                          type: number
+                        timestamp:
+                          type: integer
+                          description: Unix timestamp
+                        label:
+                          type: string
+                          nullable: true
+                        tags:
+                          type: array
+                          items:
+                            type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/token/{addr}/entry-price:
+    get:
+      operationId: tokenEntryPrice
+      tags: [Token Analysis]
+      summary: Holder entry prices and PnL
+      description: |
+        Returns current holders with their average entry cost, realized and
+        unrealized profit, and detailed trade counts.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Entry price data
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, holders]
+                properties:
+                  token:
+                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                  holders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EntryPriceHolder"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # Wallet Analysis
+  # ──────────────────────────────────────────────
+  /api/v1/wallet/{addr}:
+    get:
+      operationId: walletProfile
+      tags: [Wallet Analysis]
+      summary: Full wallet profile
+      description: |
+        Comprehensive wallet analysis including trading stats, PnL over multiple
+        time windows, SOL balance, funding source, current holdings, and identity.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+        - $ref: "#/components/parameters/Chain"
+      responses:
+        "200":
+          description: Wallet profile
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, chain]
+                properties:
+                  address:
+                    type: string
+                  chain:
+                    type: string
+                    enum: [sol, base]
+                  wallet_data:
+                    $ref: "#/components/schemas/WalletData"
+                  wallet_info:
+                    $ref: "#/components/schemas/WalletInfo"
+                  profit_stat_7d:
+                    $ref: "#/components/schemas/ProfitStat"
+                  profit_stat_30d:
+                    $ref: "#/components/schemas/ProfitStat"
+                  sol_balance:
+                    type: integer
+                    format: uint64
+                    description: Balance in lamports
+                  funding:
+                    $ref: "#/components/schemas/FundingEntry"
+                  holdings:
+                    type: object
+                    nullable: true
+                    description: Current token holdings
+                  identity:
+                    type: object
+                    nullable: true
+                    description: On-chain identity info
+                  label:
+                    type: string
+                    nullable: true
+                  tags:
+                    type: array
+                    items:
+                      type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/wallet/{addr}/history:
+    get:
+      operationId: walletHistory
+      tags: [Wallet Analysis]
+      summary: Wallet transaction history
+      description: Returns enhanced parsed transactions for a wallet with optional filtering.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [SWAP, TRANSFER, NFT_SALE, NFT_LISTING, COMPRESSED_NFT_MINT, TOKEN_MINT, UNKNOWN]
+          description: Filter by transaction type
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [JUPITER, RAYDIUM, ORCA, METEORA, PUMP_FUN, SYSTEM_PROGRAM, TOKEN_PROGRAM]
+          description: Filter by source protocol
+        - name: before
+          in: query
+          schema:
+            type: string
+          description: Transaction signature to paginate before
+      responses:
+        "200":
+          description: Transaction history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  description: Enhanced parsed transaction (Helius format)
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/wallet/{addr}/connections:
+    get:
+      operationId: walletConnections
+      tags: [Wallet Analysis]
+      summary: Wallet SOL transfer connections
+      description: |
+        Scans up to 10,000 transactions to find SOL transfer connections,
+        filtering off-curve (PDA) addresses. Shows net flow direction
+        and transfer frequency.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+        - name: min_sol
+          in: query
+          schema:
+            type: number
+            format: float
+            default: 0.1
+          description: Minimum SOL threshold for connections
+        - name: max_pages
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 20
+          description: Maximum pages of transaction history to scan
+      responses:
+        "200":
+          description: Wallet connections
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, total_transactions_scanned, connections]
+                properties:
+                  address:
+                    type: string
+                  total_transactions_scanned:
+                    type: integer
+                  connections:
+                    type: array
+                    items:
+                      type: object
+                      required: [address, total_sent_sol, total_received_sol, net_sol, transfer_count, first_seen, last_seen]
+                      properties:
+                        address:
+                          type: string
+                        total_sent_sol:
+                          type: number
+                        total_received_sol:
+                          type: number
+                        net_sol:
+                          type: number
+                        transfer_count:
+                          type: integer
+                        first_seen:
+                          type: integer
+                          description: Unix timestamp
+                        last_seen:
+                          type: integer
+                          description: Unix timestamp
+                        label:
+                          type: string
+                          nullable: true
+                        tags:
+                          type: array
+                          items:
+                            type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/wallets/batch-identity:
+    post:
+      operationId: walletBatchIdentity
+      tags: [Wallet Analysis]
+      summary: Batch wallet identity lookup
+      description: Resolve identities (names, tags, labels) for up to 100 wallets at once.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [addresses]
+              properties:
+                addresses:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  description: Array of wallet public keys
+            example:
+              addresses:
+                - 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+                - DfMxre4cKmvogbLrPigxmibVTTQDuzjdXojWzjCXXhzj
+      responses:
+        "200":
+          description: Array of identity objects
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  description: Wallet identity info
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # Cross-Token Analysis
+  # ──────────────────────────────────────────────
+  /api/v1/tokens/cross-holders:
+    post:
+      operationId: crossHolders
+      tags: [Cross-Token Analysis]
+      summary: Find wallets holding multiple tokens
+      description: |
+        Identifies wallets that hold two or more of the specified tokens,
+        useful for detecting coordinated positions or shared communities.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokens]
+              properties:
+                tokens:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 2
+                  description: Array of token mint addresses
+                chain:
+                  type: string
+                  enum: [sol, base]
+                  default: sol
+            example:
+              tokens:
+                - EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+                - So11111111111111111111111111111111111111112
+              chain: sol
+      responses:
+        "200":
+          description: Cross-holder analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens, cross_holders]
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UnifiedTokenInfo"
+                  cross_holders:
+                    type: array
+                    items:
+                      type: object
+                      required: [wallet, balances]
+                      properties:
+                        wallet:
+                          type: string
+                        balances:
+                          type: object
+                          additionalProperties:
+                            type: integer
+                            format: uint64
+                          description: Map of mint address to token balance
+                        label:
+                          type: string
+                          nullable: true
+                        tags:
+                          type: array
+                          items:
+                            type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/tokens/cross-traders:
+    post:
+      operationId: crossTraders
+      tags: [Cross-Token Analysis]
+      summary: Find wallets that traded multiple tokens
+      description: |
+        Identifies wallets that traded two or more of the specified tokens,
+        with per-token profit data for each trader.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokens]
+              properties:
+                tokens:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 2
+                  description: Array of token mint addresses
+                chain:
+                  type: string
+                  enum: [sol, base]
+                  default: sol
+            example:
+              tokens:
+                - EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+                - So11111111111111111111111111111111111111112
+              chain: sol
+      responses:
+        "200":
+          description: Cross-trader analysis
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens, cross_traders]
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/UnifiedTokenInfo"
+                  cross_traders:
+                    type: array
+                    items:
+                      type: object
+                      required: [address, profits]
+                      properties:
+                        address:
+                          type: string
+                        profits:
+                          type: array
+                          items:
+                            type: object
+                            required: [token, profit]
+                            properties:
+                              token:
+                                type: string
+                              profit:
+                                type: number
+                        label:
+                          type: string
+                          nullable: true
+                        tags:
+                          type: array
+                          items:
+                            type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # On-Chain Data
+  # ──────────────────────────────────────────────
+  /api/v1/account/{addr}:
+    get:
+      operationId: getAccount
+      tags: [On-Chain Data]
+      summary: Get account info (jsonParsed)
+      description: Returns the Solana `getAccountInfo` response with jsonParsed encoding.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Account public key (base58)
+      responses:
+        "200":
+          description: Account info
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Solana getAccountInfo jsonParsed response
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/accounts/batch:
+    post:
+      operationId: getAccountsBatch
+      tags: [On-Chain Data]
+      summary: Batch account info lookup
+      description: Returns `getMultipleAccounts` data for up to 100 addresses.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [addresses]
+              properties:
+                addresses:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+            example:
+              addresses:
+                - So11111111111111111111111111111111111111112
+                - EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+      responses:
+        "200":
+          description: Multiple account info
+          content:
+            application/json:
+              schema:
+                type: object
+                description: Solana getMultipleAccounts response
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/transactions/parse:
+    post:
+      operationId: parseTransactions
+      tags: [On-Chain Data]
+      summary: Parse transaction signatures
+      description: Parses up to 100 transaction signatures into human-readable format.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transactions]
+              properties:
+                transactions:
+                  type: array
+                  items:
+                    type: string
+                  minItems: 1
+                  maxItems: 100
+                  description: Array of transaction signatures
+            example:
+              transactions:
+                - 5UfDuX7hXbAjRPBkW3n8B6kR8Xj8fZwLxHkGqNhVJbqN...
+      responses:
+        "200":
+          description: Parsed transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  description: Parsed transaction
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/chain/status:
+    get:
+      operationId: chainStatus
+      tags: [On-Chain Data]
+      summary: Current chain status
+      description: Returns current slot, block height, and epoch information.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Chain status
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [slot, block_height, epoch, epoch_slot_index, epoch_slots_remaining, slots_in_epoch]
+                properties:
+                  slot:
+                    type: integer
+                    format: uint64
+                  block_height:
+                    type: integer
+                    format: uint64
+                  epoch:
+                    type: integer
+                    format: uint64
+                  epoch_slot_index:
+                    type: integer
+                    format: uint64
+                  epoch_slots_remaining:
+                    type: integer
+                    format: uint64
+                  slots_in_epoch:
+                    type: integer
+                    format: uint64
+
+  /api/v1/chain/fees:
+    get:
+      operationId: chainFees
+      tags: [On-Chain Data]
+      summary: Priority fee estimates
+      description: Returns priority fee level estimates, optionally scoped to specific accounts.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - name: accounts
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of account public keys to scope fee estimates
+          example: "So11111111111111111111111111111111111111112,EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+      responses:
+        "200":
+          description: Fee estimates
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [priorityFeeLevels]
+                properties:
+                  priorityFeeLevels:
+                    type: object
+                    required: [min, low, medium, high, veryHigh, unsafeMax]
+                    properties:
+                      min:
+                        type: number
+                      low:
+                        type: number
+                      medium:
+                        type: number
+                      high:
+                        type: number
+                      veryHigh:
+                        type: number
+                      unsafeMax:
+                        type: number
+
+  # ──────────────────────────────────────────────
+  # Analytics Proxy
+  # ──────────────────────────────────────────────
+  /api/v1/analytics/token/{addr}:
+    get:
+      operationId: analyticsTokenInfo
+      tags: [Analytics Proxy]
+      summary: GMGN token info
+      description: Proxied GMGN token information.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+      responses:
+        "200":
+          description: GMGN token data
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/analytics/token/{addr}/top-traders:
+    get:
+      operationId: analyticsTopTraders
+      tags: [Analytics Proxy]
+      summary: GMGN top traders by profit
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+      responses:
+        "200":
+          description: Top traders
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/analytics/token/{addr}/team-trades:
+    get:
+      operationId: analyticsTeamTrades
+      tags: [Analytics Proxy]
+      summary: GMGN recent trades with PnL
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+      responses:
+        "200":
+          description: Recent trades
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/analytics/token/{addr}/holders:
+    get:
+      operationId: analyticsHolders
+      tags: [Analytics Proxy]
+      summary: GMGN holders with cost basis
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/TokenAddress"
+      responses:
+        "200":
+          description: Holders with cost basis
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/analytics/dev/{addr}/created:
+    get:
+      operationId: analyticsDevCreated
+      tags: [Analytics Proxy]
+      summary: Tokens created by an address
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Creator wallet address (base58)
+      responses:
+        "200":
+          description: Created tokens list
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # Solana RPC Proxy
+  # ──────────────────────────────────────────────
+  /api/v1/solana/rpc:
+    post:
+      operationId: solanaRpc
+      tags: [Solana RPC Proxy]
+      summary: JSON-RPC passthrough
+      description: |
+        Forwards a standard Solana JSON-RPC request to the configured RPC endpoint.
+        Supports all standard Solana RPC methods.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jsonrpc, id, method]
+              properties:
+                jsonrpc:
+                  type: string
+                  enum: ["2.0"]
+                id:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                method:
+                  type: string
+                  description: Solana RPC method name
+                params:
+                  type: array
+                  items: {}
+            example:
+              jsonrpc: "2.0"
+              id: 1
+              method: getSlot
+              params: []
+      responses:
+        "200":
+          description: JSON-RPC response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jsonrpc:
+                    type: string
+                  id:
+                    oneOf:
+                      - type: string
+                      - type: integer
+                  result: {}
+                  error:
+                    type: object
+                    properties:
+                      code:
+                        type: integer
+                      message:
+                        type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/balance/{addr}:
+    get:
+      operationId: solanaBalance
+      tags: [Solana RPC Proxy]
+      summary: SOL balance in lamports
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Balance response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    type: integer
+                    format: uint64
+                    description: Balance in lamports
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/token/{mint}/supply:
+    get:
+      operationId: solanaTokenSupply
+      tags: [Solana RPC Proxy]
+      summary: Token supply
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/MintAddress"
+      responses:
+        "200":
+          description: Token supply
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/token/{mint}/largest:
+    get:
+      operationId: solanaTokenLargest
+      tags: [Solana RPC Proxy]
+      summary: Top 20 token accounts by balance
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/MintAddress"
+      responses:
+        "200":
+          description: Largest token accounts
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/token/{mint}/accounts:
+    get:
+      operationId: solanaTokenAccounts
+      tags: [Solana RPC Proxy]
+      summary: DAS token accounts (paginated)
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/MintAddress"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Token accounts
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/asset/{addr}:
+    get:
+      operationId: solanaAsset
+      tags: [Solana RPC Proxy]
+      summary: DAS asset metadata
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset address (base58)
+      responses:
+        "200":
+          description: Asset metadata
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/wallet/{addr}/tokens:
+    get:
+      operationId: solanaWalletTokens
+      tags: [Solana RPC Proxy]
+      summary: SPL token accounts for a wallet
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Token accounts
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/wallet/{addr}/signatures:
+    get:
+      operationId: solanaWalletSignatures
+      tags: [Solana RPC Proxy]
+      summary: Transaction signatures for a wallet
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        - name: before
+          in: query
+          schema:
+            type: string
+          description: Transaction signature to paginate before
+      responses:
+        "200":
+          description: Signatures list
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/wallet/{addr}/funded-by:
+    get:
+      operationId: solanaWalletFundedBy
+      tags: [Solana RPC Proxy]
+      summary: Wallet funding source
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - $ref: "#/components/parameters/WalletAddress"
+      responses:
+        "200":
+          description: Funding source info
+          content:
+            application/json:
+              schema:
+                type: object
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/solana/transactions/{addr}:
+    get:
+      operationId: solanaTransactions
+      tags: [Solana RPC Proxy]
+      summary: Full transaction history with filtering
+      description: |
+        Returns paginated transaction history for an address with extensive
+        filtering options including status, time range, and token account inclusion.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      parameters:
+        - name: addr
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Account address (base58)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [succeeded, failed, any]
+        - name: token_accounts
+          in: query
+          schema:
+            type: string
+            enum: [none, balanceChanged, all]
+        - name: block_time_gte
+          in: query
+          schema:
+            type: integer
+          description: Minimum block time (unix timestamp)
+        - name: block_time_lte
+          in: query
+          schema:
+            type: integer
+          description: Maximum block time (unix timestamp)
+        - name: cursor
+          in: query
+          schema:
+            type: string
+          description: Pagination cursor
+      responses:
+        "200":
+          description: Transaction history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, count, transactions]
+                properties:
+                  address:
+                    type: string
+                  count:
+                    type: integer
+                  transactions:
+                    type: array
+                    items:
+                      type: object
+                  next_cursor:
+                    type: string
+                    nullable: true
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  # ──────────────────────────────────────────────
+  # AI Chat
+  # ──────────────────────────────────────────────
+  /api/v1/chat:
+    post:
+      operationId: aiChat
+      tags: [AI Chat]
+      summary: AI-powered on-chain research chat
+      description: |
+        Send a conversation to the AI assistant which can autonomously fetch
+        on-chain data to answer questions about tokens, wallets, and markets.
+        Has a 5-minute timeout and allows 1 concurrent request per IP.
+      x-rate-limit: Heavy
+      security:
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role:
+                        type: string
+                        enum: [user, assistant]
+                      content:
+                        type: string
+            example:
+              messages:
+                - role: user
+                  content: "Analyze the top holders of BONK and tell me if any look suspicious"
+      responses:
+        "200":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [response]
+                properties:
+                  response:
+                    type: string
+                    description: AI-generated analysis
+                  data_fetched:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                          description: Data source or endpoint used
+                        address:
+                          type: string
+                          description: Token or wallet address queried
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /api/v1/chat/stats:
+    get:
+      operationId: chatStats
+      tags: [AI Chat]
+      summary: AI chat service statistics
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Chat stats
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, total_chats, chats_24h, avg_response_ms, success_rate, active_now]
+                properties:
+                  status:
+                    type: string
+                    example: online
+                  total_chats:
+                    type: integer
+                    example: 12483
+                  chats_24h:
+                    type: integer
+                    example: 347
+                  avg_response_ms:
+                    type: number
+                    example: 8432.5
+                  success_rate:
+                    type: number
+                    description: Success rate as a decimal (0-1)
+                    example: 0.94
+                  active_now:
+                    type: integer
+                    example: 3
+
+# ════════════════════════════════════════════════
+# Components
+# ════════════════════════════════════════════════
+components:
+  securitySchemes:
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API key for data endpoints. Obtain one via the key management endpoints.
+        Can also be passed as `Authorization: Bearer se_...`.
+    BearerJwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT session token obtained via the SIWS auth flow.
+
+  parameters:
+    TokenAddress:
+      name: addr
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Token mint address (base58)
+      example: DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+
+    WalletAddress:
+      name: addr
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Wallet public key (base58)
+      example: 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU
+
+    MintAddress:
+      name: mint
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Token mint address (base58)
+      example: DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+
+    KeyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: API key UUID
+
+    Chain:
+      name: chain
+      in: query
+      schema:
+        type: string
+        enum: [sol, base]
+        default: sol
+      description: Blockchain network
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                example: Invalid wallet address
+
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                example: Invalid or expired token
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: string
+                example: Not found
+
+    RateLimited:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error, limit, type]
+            properties:
+              error:
+                type: string
+                example: Rate limit exceeded
+              limit:
+                type: string
+                description: Human-readable rate limit description
+                example: 1 request/second
+              type:
+                type: string
+                enum: [Light, Heavy]
+                description: Rate limit tier
+                example: Light
+
+  schemas:
+    UnifiedTokenInfo:
+      type: object
+      description: Aggregated token information from multiple data sources
+      properties:
+        address:
+          type: string
+          description: Token mint public key
+          example: DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263
+        symbol:
+          type: string
+          example: BONK
+        name:
+          type: string
+          example: Bonk
+        decimals:
+          type: integer
+          example: 5
+        price_usd:
+          type: number
+          example: 0.00002341
+        market_cap:
+          type: number
+          example: 1523847000
+        liquidity:
+          type: number
+          example: 8432100
+        volume_24h:
+          type: number
+          example: 45230000
+        price_change_24h:
+          type: number
+          description: Percentage change over 24 hours
+          example: -3.42
+        holder_count:
+          type: integer
+          example: 743921
+        creator:
+          type: string
+          description: Creator wallet address
+        creation_timestamp:
+          type: integer
+          description: Unix timestamp of token creation
+        top_10_holder_rate:
+          type: number
+          description: Fraction of supply held by top 10 (0-1)
+          example: 0.34
+        renounced:
+          type: boolean
+          description: Whether mint/freeze authorities are revoked
+        freeze_authority:
+          type: string
+          nullable: true
+        mint_authority:
+          type: string
+          nullable: true
+        burn_ratio:
+          type: number
+          description: Fraction of supply burned
+          example: 0.0
+        launchpad:
+          type: string
+          example: pump.fun
+        twitter:
+          type: string
+          nullable: true
+        telegram:
+          type: string
+          nullable: true
+        website:
+          type: string
+          nullable: true
+        logo:
+          type: string
+          format: uri
+          nullable: true
+        dex_paid:
+          type: boolean
+          description: Whether DEX listing is paid/promoted
+        pair_address:
+          type: string
+          nullable: true
+        dex_url:
+          type: string
+          nullable: true
+        source:
+          type: string
+          enum: [gmgn, dexscreener, none]
+          description: Primary data source
+
+    WalletData:
+      type: object
+      description: Comprehensive wallet trading statistics
+      properties:
+        sol_balance:
+          type: number
+        total_value:
+          type: number
+          description: Total portfolio value in USD
+        total_profit:
+          type: number
+        realized_profit:
+          type: number
+        unrealized_profit:
+          type: number
+        realized_profit_30d:
+          type: number
+        realized_profit_7d:
+          type: number
+        pnl_30d:
+          type: number
+        pnl_7d:
+          type: number
+        pnl_1d:
+          type: number
+        buy_30d:
+          type: integer
+        buy_7d:
+          type: integer
+        buy_1d:
+          type: integer
+        sell_30d:
+          type: integer
+        sell_7d:
+          type: integer
+        sell_1d:
+          type: integer
+        token_num:
+          type: integer
+          description: Number of tokens currently held
+        profit_num:
+          type: integer
+          description: Number of profitable trades
+        pnl_lt_minus_dot5_num:
+          type: integer
+          description: "Trades with PnL < -50%"
+        pnl_minus_dot5_0_num:
+          type: integer
+          description: "Trades with PnL between -50% and 0%"
+        pnl_lt_2x_num:
+          type: integer
+          description: "Trades with PnL 0-2x"
+        pnl_2x_5x_num:
+          type: integer
+          description: "Trades with PnL 2-5x"
+        pnl_gt_5x_num:
+          type: integer
+          description: "Trades with PnL > 5x"
+        winrate:
+          type: number
+          description: Win rate (0-1)
+          example: 0.62
+        twitter_username:
+          type: string
+          nullable: true
+        twitter_fans:
+          type: integer
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        followers_count:
+          type: integer
+        name:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+
+    WalletInfo:
+      type: object
+      description: Wallet identity information
+      properties:
+        address:
+          type: string
+        name:
+          type: string
+          nullable: true
+        avatar:
+          type: string
+          format: uri
+          nullable: true
+        twitter:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+
+    ProfitStat:
+      type: object
+      description: Profit statistics for a time period
+      properties:
+        realized_profit:
+          type: number
+        unrealized_profit:
+          type: number
+        total_profit:
+          type: number
+        total_bought_cost:
+          type: number
+        total_sold_income:
+          type: number
+        total_fee_usd:
+          type: number
+        avg_holding_period:
+          type: number
+          description: Average holding period in seconds
+        buy:
+          type: integer
+        sell:
+          type: integer
+        winrate:
+          type: number
+          description: Win rate (0-1)
+        token_num:
+          type: integer
+        pnl_lt_nd5_num:
+          type: integer
+          description: "Trades with PnL < -50%"
+        pnl_nd5_0x_num:
+          type: integer
+          description: "Trades with PnL -50% to 0%"
+        pnl_0x_2x_num:
+          type: integer
+          description: "Trades with PnL 0-2x"
+        pnl_2x_5x_num:
+          type: integer
+          description: "Trades with PnL 2-5x"
+        pnl_gt_5x_num:
+          type: integer
+          description: "Trades with PnL > 5x"
+
+    TokenStat:
+      type: object
+      description: Token holder and trader composition statistics
+      properties:
+        holder_count:
+          type: integer
+        bluechip_owner_count:
+          type: integer
+        bluechip_owner_percentage:
+          type: number
+        signal_count:
+          type: integer
+        degen_call_count:
+          type: integer
+        top_rat_trader_percentage:
+          type: number
+        top_bundler_trader_percentage:
+          type: number
+        top_entrapment_trader_percentage:
+          type: number
+        top_bot_degen_percentage:
+          type: number
+        creator_created_count:
+          type: integer
+        bot_degen_count:
+          type: integer
+        bot_degen_rate:
+          type: number
+        fresh_wallet_rate:
+          type: number
+        top_10_holder_rate:
+          type: number
+        dev_team_hold_rate:
+          type: number
+        creator_hold_rate:
+          type: number
+        creator_token_balance:
+          type: number
+        private_vault_hold_rate:
+          type: number
+
+    HolderStat:
+      type: object
+      description: Holder category breakdown
+      nullable: true
+      properties:
+        smart_degen_count:
+          type: integer
+        renowned_count:
+          type: integer
+        fresh_wallet_count:
+          type: integer
+        dex_bot_count:
+          type: integer
+        insider_count:
+          type: integer
+        following_count:
+          type: integer
+        dev_count:
+          type: integer
+        bluechip_owner_count:
+          type: integer
+        bundler_count:
+          type: integer
+        sniper_count:
+          type: integer
+
+    SecurityInfo:
+      type: object
+      description: Token security assessment
+      nullable: true
+      properties:
+        top_10_holder_rate:
+          type: number
+        renounced:
+          type: boolean
+        freeze_authority:
+          type: string
+          nullable: true
+        mint_authority:
+          type: string
+          nullable: true
+        burn_ratio:
+          type: number
+        is_true_token:
+          type: boolean
+        lock_info:
+          type: object
+          nullable: true
+
+    DexPair:
+      type: object
+      description: DexScreener pair data
+      nullable: true
+
+    ScanTrader:
+      type: object
+      description: Trader from token scan results
+
+    HolderEntry:
+      type: object
+      description: Enriched holder with wallet data and labels
+      properties:
+        address:
+          type: string
+        amount_percentage:
+          type: number
+          description: Percentage of total supply held
+        usd_value:
+          type: number
+        wallet_data:
+          $ref: "#/components/schemas/WalletData"
+        profit_stat:
+          $ref: "#/components/schemas/ProfitStat"
+        funder:
+          type: string
+          nullable: true
+          description: Funding source wallet
+        funder_name:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+          description: Solscan label
+        tags:
+          type: array
+          items:
+            type: string
+          description: Solscan tags
+
+    AnalyzedWalletEntry:
+      type: object
+      description: Analyzed wallet with age categorization
+      properties:
+        address:
+          type: string
+        balance:
+          type: number
+        percentage:
+          type: number
+          description: Percentage of supply held
+        category:
+          type: string
+          enum: [new, recent, established, old]
+          description: Wallet age category
+        tx_count:
+          type: integer
+        funder:
+          type: string
+          nullable: true
+        funder_name:
+          type: string
+          nullable: true
+        locked:
+          type: boolean
+          description: Whether tokens are locked
+        label:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+
+    BestTraderEntry:
+      type: object
+      description: Top trader with profit breakdown
+      properties:
+        address:
+          type: string
+        realized_profit:
+          type: number
+        unrealized_profit:
+          type: number
+        total_profit:
+          type: number
+        profit_change:
+          type: number
+        buy_amount:
+          type: number
+        sell_amount:
+          type: number
+        buy_tx_count:
+          type: integer
+          format: int64
+        sell_tx_count:
+          type: integer
+          format: int64
+        name:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        twitter_username:
+          type: string
+          nullable: true
+        is_suspicious:
+          type: boolean
+        label:
+          type: string
+          nullable: true
+        solscan_tags:
+          type: array
+          items:
+            type: string
+
+    EntryPriceHolder:
+      type: object
+      description: Holder with entry cost and PnL data
+      properties:
+        address:
+          type: string
+        account_address:
+          type: string
+          description: Token account address
+        amount_percentage:
+          type: number
+        usd_value:
+          type: number
+        balance:
+          type: number
+        cost:
+          type: number
+          description: Total cost basis
+        avg_cost:
+          type: number
+          description: Average cost per token
+        realized_profit:
+          type: number
+        unrealized_profit:
+          type: number
+        profit_change:
+          type: number
+        buy_tx_count_cur:
+          type: integer
+          format: int64
+        sell_tx_count_cur:
+          type: integer
+          format: int64
+        name:
+          type: string
+          nullable: true
+        tags:
+          type: array
+          items:
+            type: string
+        is_suspicious:
+          type: boolean
+        is_new:
+          type: boolean
+        transfer_in:
+          type: boolean
+          description: Whether tokens were received via transfer rather than purchase
+        wallet_tag_v2:
+          type: string
+          nullable: true
+        native_transfer:
+          type: object
+          nullable: true
+          description: Details of a native SOL transfer funding this wallet
+          properties:
+            from_address:
+              type: string
+            amount:
+              type: number
+            timestamp:
+              type: integer
+            name:
+              type: string
+              nullable: true
+
+    FundingEntry:
+      type: object
+      description: Wallet funding source
+      nullable: true
+      properties:
+        funder:
+          type: string
+          description: Funder wallet address
+        funder_name:
+          type: string
+          nullable: true
+        amount:
+          type: number
+          description: Amount in SOL
+
+    ApiKeyFull:
+      type: object
+      description: API key with full details (key visible only on creation)
+      required: [id, name, tier, key, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: 550e8400-e29b-41d4-a716-446655440000
+        name:
+          type: string
+          example: My trading bot
+        tier:
+          type: string
+          enum: [free, pro]
+          example: free
+        enabled:
+          type: boolean
+          example: true
+        key:
+          type: string
+          description: "API key (se_... prefix). Full key shown only on creation."
+          example: se_live_a1b2c3d4e5f6...
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-03-28T10:00:00Z"
+        last_used_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ApiKeyUsage:
+      type: object
+      description: API key usage statistics
+      required: [total_requests, successful_requests, failed_requests, success_rate, avg_response_ms, timeline, by_endpoint]
+      properties:
+        total_requests:
+          type: integer
+          example: 4523
+        successful_requests:
+          type: integer
+          example: 4401
+        failed_requests:
+          type: integer
+          example: 122
+        success_rate:
+          type: number
+          description: Success rate as decimal (0-1)
+          example: 0.973
+        avg_response_ms:
+          type: number
+          example: 342.7
+        timeline:
+          type: array
+          items:
+            type: object
+            required: [t, ok, err]
+            properties:
+              t:
+                type: string
+                format: date-time
+                description: Time bucket start
+              ok:
+                type: integer
+                description: Successful requests in this bucket
+              err:
+                type: integer
+                description: Failed requests in this bucket
+        by_endpoint:
+          type: array
+          items:
+            type: object
+            required: [endpoint, count, avg_ms]
+            properties:
+              endpoint:
+                type: string
+                example: /api/v1/token/{addr}/scan
+              count:
+                type: integer
+                example: 234
+              avg_ms:
+                type: number
+                example: 1230.4

@@ -1,0 +1,41 @@
+{
+  "name": "@noesis/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for the Noesis on-chain intelligence API — Solana token & wallet analytics.",
+  "keywords": [
+    "solana",
+    "noesis",
+    "on-chain",
+    "analytics",
+    "wallet",
+    "token",
+    "pump-fun",
+    "mcp",
+    "sdk"
+  ],
+  "author": "Noesis",
+  "license": "MIT",
+  "homepage": "https://noesisapi.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/typescript.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/typescript/issues"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
