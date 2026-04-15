@@ -4,8 +4,8 @@
 
 **Official Rust SDK for the [Noesis](https://noesisapi.dev) on-chain intelligence API.**
 
-[![Crates.io](https://img.shields.io/crates/v/noesis)](https://crates.io/crates/noesis)
-[![Docs.rs](https://img.shields.io/docsrs/noesis)](https://docs.rs/noesis)
+[![Crates.io](https://img.shields.io/crates/v/noesis-api)](https://crates.io/crates/noesis-api)
+[![Docs.rs](https://img.shields.io/docsrs/noesis-api)](https://docs.rs/noesis-api)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Website](https://img.shields.io/badge/website-noesisapi.dev-orange)](https://noesisapi.dev)
 
@@ -16,21 +16,21 @@
 ## Install
 
 ```bash
-cargo add noesis
+cargo add noesis-api
 ```
 
 Or add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-noesis = "0.1"
+noesis-api = "0.1"
 tokio = { version = "1", features = ["full"] }
 ```
 
 ## Quick start
 
 ```rust
-use noesis::Noesis;
+use noesis_api::Noesis;
 
 #[tokio::main]
 async fn main() -> Result<(), noesis::Error> {

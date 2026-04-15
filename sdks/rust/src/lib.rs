@@ -3,7 +3,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use noesis::Noesis;
+//! use noesis_api::Noesis;
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), noesis::Error> {
