@@ -4,7 +4,7 @@
 
 **Official Python SDK for the [Noesis](https://noesisapi.dev) on-chain intelligence API.**
 
-[![PyPI](https://img.shields.io/pypi/v/noesis)](https://pypi.org/project/noesis/)
+[![PyPI](https://img.shields.io/pypi/v/noesis-api)](https://pypi.org/project/noesis-api/)
 [![Python](https://img.shields.io/badge/python-3.9+-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Website](https://img.shields.io/badge/website-noesisapi.dev-orange)](https://noesisapi.dev)
@@ -16,7 +16,7 @@
 ## Install
 
 ```bash
-pip install noesis
+pip install noesis-api
 ```
 
 ## Quick start

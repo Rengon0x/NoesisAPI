@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "noesis"
+name = "noesis-api"
 version = "0.1.0"
 description = "Official Python SDK for the Noesis on-chain intelligence API — Solana token & wallet analytics."
 readme = "README.md"
@@ -31,3 +31,6 @@ Homepage = "https://noesisapi.dev"
 Documentation = "https://noesisapi.dev/docs"
 Repository = "https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/python"
 Issues = "https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/python/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["noesis"]
