@@ -54,17 +54,17 @@ curl -H "X-API-Key: $NOESIS_API_KEY" \
 
 ```bash
 # TypeScript / Node
-npm install @noesis/sdk
+npm install noesis-api
 
 # Python
-pip install noesis
+pip install noesis-api
 
 # Rust
-cargo add noesis
+cargo add noesis-api
 ```
 
 ```typescript
-import { Noesis } from "@noesis/sdk";
+import { Noesis } from "noesis-api";
 
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY });
 const preview = await noesis.token.preview("<MINT>");
@@ -85,16 +85,16 @@ Add Noesis to any MCP-compatible client (Claude Desktop, Cursor, Cline, Windsurf
 }
 ```
 
-13 tools available — `token_scan`, `token_bundles`, `token_fresh_wallets`, `token_dev_profile`, `wallet_profile`, `wallet_connections`, `cross_holders`, `cross_traders`, and more. See [full list](https://noesisapi.dev/docs).
+20 tools available — token analysis (`token_scan`, `token_preview`, `token_info`, `token_bundles`, `token_fresh_wallets`, `token_top_holders`, `token_team_supply`, `token_entry_price`, `token_dev_profile`, `token_best_traders`, `token_early_buyers`), wallet analysis (`wallet_profile`, `wallet_connections`, `wallet_history`), cross-token (`cross_holders`, `cross_traders`), and on-chain (`chain_status`, `chain_fees`, `transactions_parse`). See [full list](https://noesisapi.dev/docs).
 
 ## Repository layout
 
 | Path | Description |
 |---|---|
 | [`openapi.yaml`](./openapi.yaml) | OpenAPI 3.1 specification |
-| [`sdks/typescript`](./sdks/typescript) | TypeScript / Node.js SDK — `@noesis/sdk` on npm |
-| [`sdks/python`](./sdks/python) | Python SDK — `noesis` on PyPI |
-| [`sdks/rust`](./sdks/rust) | Rust SDK — `noesis` on crates.io |
+| [`sdks/typescript`](./sdks/typescript) | TypeScript / Node.js SDK — [`noesis-api`](https://www.npmjs.com/package/noesis-api) on npm |
+| [`sdks/python`](./sdks/python) | Python SDK — [`noesis-api`](https://pypi.org/project/noesis-api/) on PyPI |
+| [`sdks/rust`](./sdks/rust) | Rust SDK — [`noesis-api`](https://crates.io/crates/noesis-api) on crates.io |
 | [`examples/`](./examples) | Runnable examples in Bash, Node, Python, and Rust |
 | [`docs/`](./docs) | Guides and documentation |
 
