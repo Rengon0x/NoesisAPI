@@ -1,0 +1,26 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Rengon0x/noesis",
+  "title": "Noesis — Solana On-Chain Intelligence",
+  "description": "Solana on-chain intelligence — token scans, wallet profiling, bundle detection, 20 MCP tools.",
+  "version": "2.1.0",
+  "repository": {
+    "url": "https://github.com/Rengon0x/NoesisAPI",
+    "source": "github"
+  },
+  "websiteUrl": "https://noesisapi.dev",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://noesisapi.dev/mcp",
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "description": "Noesis API key. Get one free at https://noesisapi.dev/keys",
+          "isSecret": true,
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}
