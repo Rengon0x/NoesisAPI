@@ -85,7 +85,7 @@ Add Noesis to any MCP-compatible client (Claude Desktop, Cursor, Cline, Windsurf
 }
 ```
 
-20 tools available — token analysis (`token_scan`, `token_preview`, `token_info`, `token_bundles`, `token_fresh_wallets`, `token_top_holders`, `token_team_supply`, `token_entry_price`, `token_dev_profile`, `token_best_traders`, `token_early_buyers`), wallet analysis (`wallet_profile`, `wallet_connections`, `wallet_history`), cross-token (`cross_holders`, `cross_traders`), and on-chain (`chain_status`, `chain_fees`, `transactions_parse`). See [full list](https://noesisapi.dev/docs).
+19 tools available — token analysis (`token_scan`, `token_preview`, `token_info`, `token_bundles`, `token_fresh_wallets`, `token_top_holders`, `token_team_supply`, `token_entry_price`, `token_dev_profile`, `token_best_traders`, `token_early_buyers`), wallet analysis (`wallet_profile`, `wallet_connections`, `wallet_history`), cross-token (`cross_holders`, `cross_traders`), and on-chain (`chain_status`, `transactions_parse`). See [full list](https://noesisapi.dev/docs).
 
 ## Repository layout
 
@@ -105,7 +105,7 @@ Add Noesis to any MCP-compatible client (Claude Desktop, Cursor, Cline, Windsurf
 | **Tokens** | preview · scan · top-holders · bundles · fresh-wallets · team-supply · dev-profile · best-traders · early-buyers · entry-price |
 | **Wallets** | profile · history · connections · scan · batch-identity |
 | **Cross-analysis** | cross-holders · cross-traders |
-| **On-chain** | account · accounts/batch · transactions/parse · chain/status · chain/fees |
+| **On-chain** | account · accounts/batch · transactions/parse · chain/status |
 | **Live streams (SSE)** | pumpfun/new-tokens · pumpfun/migrations · raydium/new-pools · meteora/new-pools |
 | **Chat** | chat · chat/stats |
 
