@@ -24,7 +24,7 @@ Noesis ships a Model Context Protocol (MCP) server at `https://noesisapi.dev/mcp
 
 ### 3. Restart Claude Desktop
 
-You should see 13 tools appear under the tools menu, prefixed `noesis_`.
+You should see 19 tools appear under the tools menu, prefixed `noesis_`.
 
 ## Try it
 
