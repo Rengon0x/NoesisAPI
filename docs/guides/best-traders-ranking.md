@@ -64,7 +64,7 @@ Meaning: min 60% win rate, min $20k portfolio, sorted by portfolio. Sort keys: `
 Typical output:
 
 ```
-📈 Best Traders — top 100 · sorted: portfolio
+🏆 Best Traders — top 100
   1. 9aB7...Kzm2 · "@alpha_caller" · +$42k · 71% WR · port $380k
   2. 4rEp...Nn01 · "Binance Smart Money" · +$28k · 63% WR · port $215k
   3. ...
@@ -74,18 +74,18 @@ Typical output:
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../best-traders?min_winrate=50&min_portfolio=10000&sort=port"
+  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../best-traders"
 ```
 
 ### MCP
 
 ```
-token_best_traders(mint="EPjF...1v", min_winrate=50, min_portfolio=10000, sort="port")
+token_best_traders(mint="EPjF...1v")
 ```
 
 or prompt:
 
-> Show the top 20 most profitable traders on token EPjF...1v with at least 50% win rate and $10k portfolio. Include their Twitter handles if known.
+> Show the most profitable traders on token EPjF...1v. Include their Twitter handles if known.
 
 ### SDKs
 
@@ -93,33 +93,38 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const bt = await noesis.token.bestTraders("EPjFWdd5...", { minWinrate: 50, minPortfolio: 10000, sort: "port" });
+const bt = await noesis.token.bestTraders("EPjFWdd5...");
+// Filter/sort client-side:
+const smart = bt.traders.filter(t => t.winrate >= 0.5 && t.portfolio_usd >= 10000);
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-bt = noesis.token.best_traders("EPjFWdd5...", min_winrate=50, min_portfolio=10000, sort="port")
+bt = noesis.token.best_traders("EPjFWdd5...")
+# Filter/sort client-side:
+smart = [t for t in bt["traders"] if t["winrate"] >= 0.5 and t["portfolio_usd"] >= 10000]
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let bt = client.token().best_traders("EPjFWdd5...").await?;
+let client = noesis_api::Noesis::new(api_key);
+let bt = client.token_best_traders("EPjFWdd5...").await?;
 ```
 
 ## Understanding the output
 
+- `token` — basic token info
 - `traders[]` — each trader with:
-  - `address`, `rank`
-  - `pnl_usd` — realized profit/loss on this token
-  - `win_rate` — percentage across full wallet history
-  - `buys`, `sells`, `total_trades`
+  - `address`, `realized_profit`, `total_profit`
+  - `winrate` — percentage across wallet history
+  - `buy`, `sell`, `total_tx` — trade counts
   - `portfolio_usd` — all-token portfolio value
   - `sol_balance`
-  - `label`, `twitter`, `followers` — enriched for top 15
-- `filters_applied` — echo of requested thresholds and sort key
+  - `label`, `tags`, `name`, `twitter`, `followers` — enriched for top entries
+
+Filtering (by winrate / portfolio size) and sorting are done client-side.
 
 ## How to combine /besttraders with other commands
 

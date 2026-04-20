@@ -1,6 +1,6 @@
 ---
 title: How to find traders active across multiple Solana tokens
-description: Intersect the top traders of 2-3 Solana tokens to find smart money and coordinators that profit across every one of them — with the Noesis /crossbt analysis.
+description: Intersect the top traders of 2-5 Solana tokens to find smart money and coordinators that profit across every one of them — with the Noesis /crossbt analysis.
 command: /crossbt
 endpoint: POST /api/v1/tokens/cross-traders
 mcp_tool: cross_traders
@@ -9,7 +9,7 @@ slug: cross-token-traders
 
 # How to find traders active across multiple Solana tokens
 
-**TL;DR.** Noesis's `/crossbt` analysis intersects the top trader lists of 2-3 Solana tokens and returns wallets that rank in every one of them — regardless of whether they still hold. One call to `POST /api/v1/tokens/cross-traders` exposes smart money rotating through a sector and insider coordinators profiting across related launches.
+**TL;DR.** Noesis's `/crossbt` analysis intersects the top trader lists of 2-5 Solana tokens and returns wallets that rank in every one of them — regardless of whether they still hold. One call to `POST /api/v1/tokens/cross-traders` exposes smart money rotating through a sector and insider coordinators profiting across related launches.
 
 ## Why cross-trader analysis matters
 
@@ -24,7 +24,7 @@ Both matter. `/crossbt` returns them in the same ranked list; classification hap
 
 ## What does /crossbt return?
 
-Given 2-3 token mints, `/crossbt` returns:
+Given 2-5 token mints, `/crossbt` returns:
 
 1. **Wallets that rank in the top traders of every provided token** (using GMGN's top-100 list per token)
 2. **Per-token rank** for each recurring wallet
@@ -91,20 +91,20 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const cbt = await noesis.tokens.crossTraders(["mint_a", "mint_b", "mint_c"]);
+const cbt = await noesis.wallet.crossTraders(["mint_a", "mint_b", "mint_c"]);
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-cbt = noesis.tokens.cross_traders(["mint_a", "mint_b", "mint_c"])
+cbt = noesis.wallet.cross_traders(["mint_a", "mint_b", "mint_c"])
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let cbt = client.tokens().cross_traders(&["mint_a", "mint_b", "mint_c"]).await?;
+let client = noesis_api::Noesis::new(api_key);
+let cbt = client.cross_traders(&["mint_a".into(), "mint_b".into(), "mint_c".into()]).await?;
 ```
 
 ## Understanding the output
@@ -160,7 +160,7 @@ let cbt = client.tokens().cross_traders(&["mint_a", "mint_b", "mint_c"]).await?;
 
 - **Solana only.**
 - **Requires auth** — 1 req / 5 sec.
-- **2-3 tokens per call.** More tokens aren't supported on this endpoint.
+- **2-5 tokens per call.** More tokens produce tighter intersections.
 - **Uses GMGN top-100 cutoff** — a wallet that's ranked #150 on one token and #5 on another won't surface.
 
 ## FAQ
@@ -198,7 +198,7 @@ GMGN top-trader lists update every few minutes. `/crossbt` fetches live per call
       "@type": "TechArticle",
       "@id": "https://noesisapi.dev/guides/cross-token-traders#article",
       "headline": "How to find traders active across multiple Solana tokens",
-      "description": "Intersect the top traders of 2-3 Solana tokens to find smart money and coordinators that profit across every one of them with the Noesis /crossbt analysis.",
+      "description": "Intersect the top traders of 2-5 Solana tokens to find smart money and coordinators that profit across every one of them with the Noesis /crossbt analysis.",
       "author": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "publisher": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "datePublished": "2026-04-17",

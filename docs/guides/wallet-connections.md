@@ -38,7 +38,7 @@ Sorted by gross transfer volume descending.
 
 ## How does Noesis build the graph?
 
-The analysis pulls the target wallet's SOL transfer history via Solscan/Helius (up to 10,000 transactions) and aggregates per counterparty:
+The analysis pulls the target wallet's SOL transfer history via Helius — up to 100 pages (≈100,000 transactions) by default, tunable via `max_pages` — and aggregates per counterparty:
 
 - Filter to on-curve wallets only (excludes PDAs, token programs, associated token accounts)
 - Group transfers by counterparty address
@@ -162,7 +162,7 @@ let links = client.wallet().connections("9aB7...", 0.5).await?;
 
 - **Active CEX hot wallets** appear as the largest connection for any CEX-funded wallet — this is accurate but often not actionable (you already know it's a CEX).
 - **Aggregator routing** — Jupiter/other aggregators can route SOL through intermediate accounts that appear as "connections" briefly. PDA filtering catches most of these; unusual ones may slip through.
-- **Very active wallets** (10k+ transactions) may hit the 10k-tx pagination cap, truncating the oldest connections. The most-recent / highest-flow connections always surface first.
+- **Very active wallets** may hit the default 100-page (≈100k tx) pagination cap, truncating the oldest connections. The most-recent / highest-flow connections always surface first. Raise `max_pages` for deeper history (caps at 100).
 
 ## Caveats
 
@@ -174,10 +174,10 @@ let links = client.wallet().connections("9aB7...", 0.5).await?;
 ## FAQ
 
 **What's a meaningful minimum SOL threshold?**
-0.1 SOL is the default and surfaces most real connections on pump.fun-era wallets. Raise to 1-5 SOL for whale-scale analysis or to cut dust from the graph. Lower to 0.01 if you're tracing a micro-funded insider cluster.
+0.1 SOL is the default and surfaces most real connections on pump.fun-era wallets. Raise to 1-5 SOL for whale-scale analysis or to cut dust from the graph. Lower to 0.01 if you're tracing a micro-funded insider cluster. Default `max_pages` is 100 (≈100k txs scanned); specify lower values for faster responses.
 
 **Why does /links miss some obvious connections?**
-Two reasons: (1) the connection is via SPL tokens or swaps, not native SOL transfers — `/links` is SOL-only by design. (2) the wallet has more than 10k transactions and the connection is very old, beyond the pagination cap.
+Two reasons: (1) the connection is via SPL tokens or swaps, not native SOL transfers — `/links` is SOL-only by design. (2) the wallet's transaction history exceeds `max_pages × 100` transactions and the connection is older than that cap.
 
 **How do I find a wallet's funding source?**
 Look at the top inflow connection with the oldest first-tx. For fresh wallets, the original funder is usually the only inflow connection of any size. For older wallets, trace the oldest inflows.

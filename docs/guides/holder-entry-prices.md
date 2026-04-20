@@ -80,13 +80,13 @@ Distribution: 14 in profit · 4 near entry · 2 underwater
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../entry-price?limit=20"
+  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../entry-price"
 ```
 
 ### MCP
 
 ```
-token_entry_price(mint="EPjF...1v", limit=20)
+token_entry_price(mint="EPjF...1v")
 ```
 
 or prompt:
@@ -99,35 +99,34 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const em = await noesis.token.entryPrice("EPjFWdd5...", { limit: 20 });
+const em = await noesis.token.entryPrice("EPjFWdd5...");
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-em = noesis.token.entry_price("EPjFWdd5...", limit=20)
+em = noesis.token.entry_price("EPjFWdd5...")
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let em = client.token().entry_price("EPjFWdd5...", 20).await?;
+use noesis_api::{Noesis, Chain};
+let client = Noesis::new(api_key);
+let em = client.token_entry_price("EPjFWdd5...", Chain::Sol).await?;
 ```
 
 ## Understanding the output
 
-- `holders[]` — each top holder with:
-  - `address`, `percent_supply`, `amount`
-  - `entry_price_usd` — weighted average across their buys
-  - `cost_basis_usd` — total USD spent
-  - `entry_time` — timestamp of first buy
-  - `current_price_usd` — live price reference
-  - `pnl_usd`, `pnl_percent`
-- `average_entry_usd` — across all tracked holders
-- `current_price_usd` — global reference
-- `average_pnl_percent`
-- `distribution` — counts of `in_profit`, `near_entry` (±5%), `underwater`
+- `token` — basic token info (price, market cap, etc.)
+- `holders[]` — top holders with cost-basis data (GMGN holder struct):
+  - `address`, `amount_percentage`, `usd_value`, `balance`
+  - `cost` — total USD spent on buys
+  - `avg_cost` — weighted average entry price
+  - `realized_profit`, `unrealized_profit` — current PnL
+  - `buy_tx_count_cur`, `sell_tx_count_cur` — trade counts
+  - `name`, `tags` — GMGN enrichment
+  - `is_suspicious`, `is_new` — risk flags
 
 ## How to combine /entrymap with other commands
 
@@ -168,8 +167,8 @@ let em = client.token().entry_price("EPjFWdd5...", 20).await?;
 ## Caveats
 
 - **Solana only.**
-- **Requires auth** — 1 req / 5 sec.
-- **Default `limit=20`, max 50.** Deeper coverage requires multiple calls.
+- **Requires auth** — 1 req / 5 sec (Heavy tier).
+- **Returns top holders** with cost-basis data from GMGN's holder endpoint.
 - **Uses best-pair price** — micro-liquidity tokens may report misleading "current price" if the best pair is thin.
 
 ## FAQ

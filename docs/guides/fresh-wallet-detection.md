@@ -9,7 +9,7 @@ slug: fresh-wallet-detection
 
 # How to spot fresh-wallet insider activity on a Solana token
 
-**TL;DR.** Noesis's `/fresh` analysis lists every holder that was created shortly before the token launched, has almost no prior transaction history, and holds at least 0.05% of supply. One call to `GET /api/v1/token/{mint}/fresh-wallets` returns a ranked list with amounts, percentages, transaction counts, and Solscan labels. High fresh-wallet counts are the clearest single insider signal on pump.fun.
+**TL;DR.** Noesis's `/fresh` analysis lists every holder that was created shortly before the token launched, has fewer than 100 prior transactions, and holds at least 0.05% of supply. One call to `GET /api/v1/token/{mint}/fresh-wallets` returns a ranked list with amounts, percentages, transaction counts, and Solscan labels. High fresh-wallet counts are the clearest single insider signal on pump.fun.
 
 ## Why fresh-wallet detection matters
 
@@ -21,7 +21,7 @@ Teams and bundlers script fresh wallets because they look anonymous in the holde
 
 `/fresh` flags a holder if it matches all three criteria:
 
-1. **Low transaction history** — fewer than a few dozen total transactions across its entire lifetime
+1. **Low transaction history** — fewer than 100 total transactions across its entire lifetime
 2. **Recent creation** — first activity timestamp close to the token's launch window
 3. **Meaningful position** — holds at least 0.05% of the token's total supply
 
@@ -50,14 +50,19 @@ The output is a sorted list — highest-supply fresh wallets first — so you se
 or the alias `/fw`. Typical output:
 
 ```
-🆕 Fresh Wallets Analysis
-Found 38 fresh wallets (of 412 holders)
-Combined supply: 7.8%
+🔥 Fresh Wallets Analysis for EPjFWdd5...
+EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 
-  1. 7xKX...9zF2 — 0.42% · 3 txs
-  2. 4bBa...pLm1 — 0.38% · 1 tx
-  3. Gx9w...Qr71 — 0.31% · 7 txs
-  ...
+⚠️ Supply controlled by fresh wallets: 7.8% 🟢
+🔒 Locked supply (excluded): 0.15%
+
+Top Fresh Wallets:
+
+1. 💰 7xKX...9zF2 → 0.42% 🆕
+   ↳ Funded from Kucoin 2h ago
+
+2. 💰 4bBa...pLm1 → 0.38% 🆕
+   ↳ Unknown funder
 ```
 
 ### REST API
@@ -84,7 +89,7 @@ or prompt:
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
 const fresh = await noesis.token.freshWallets("EPjFWdd5...");
-console.log(`${fresh.wallets.length} fresh wallets, ${fresh.totalPercent}% supply`);
+console.log(`${fresh.wallets.length} fresh wallets, ${fresh.supply_controlled}% supply`);
 ```
 
 **Python**
@@ -92,28 +97,33 @@ console.log(`${fresh.wallets.length} fresh wallets, ${fresh.totalPercent}% suppl
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
 fresh = noesis.token.fresh_wallets("EPjFWdd5...")
-print(f"{len(fresh.wallets)} fresh, {fresh.total_percent}% supply")
+print(f"{len(fresh['wallets'])} fresh, {fresh['supply_controlled']}% supply")
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let fresh = client.token().fresh_wallets("EPjFWdd5...").await?;
-println!("{} fresh, {}% supply", fresh.wallets.len(), fresh.total_percent);
+let client = noesis_api::Client::new(api_key);
+let fresh = client.token_fresh_wallets("EPjFWdd5...").await?;
+println!("{} fresh wallets", fresh.get("fresh_count").unwrap());
 ```
 
 ## Understanding the output
 
-- `total_holders` — full holder count for context
+- `total_supply` — full token supply in decimals
 - `fresh_count` — number of wallets flagged as fresh
-- `total_percent` — combined supply share across all flagged wallets
+- `total_analyzed` — total holders examined
+- `supply_controlled` — combined supply share across all flagged wallets
 - `wallets[]` — each flagged wallet with:
   - `address`
-  - `percent_supply`
-  - `amount`
-  - `tx_count` — lifetime transactions (usually 1-20 for true fresh wallets)
-  - `first_tx_age` — time since wallet's first-ever transaction
+  - `balance` — token amount held
+  - `percentage` — % of total supply
+  - `category` — wallet classification (usually "Fresh" for this endpoint)
+  - `tx_count` — lifetime transactions (typically under 20 for true fresh wallets)
+  - `funder` — funding wallet address
+  - `funder_name` — human-readable funder name if known
+  - `locked` — true if funds are escrow-locked (excluded from control count)
   - `label` — Solscan label if present
+  - `tags` — wallet tags from enrichment sources
 
 ## How to combine /fresh with other commands
 
@@ -123,7 +133,7 @@ On the Telegram bot, click "Track" on the `/fresh` output to get pinged when fla
 **Chain 2 — Fresh + bundle + team triangulation**
 ```
 /fresh <mint>      → fresh-wallet supply share
-/bundle <mint>     → time-based buy clustering
+/bundle <mint>     → bundle classification
 /team <mint>       → funder graph clustering
 ```
 All three elevated on the same mint is the highest-confidence coordinated-launch signal Noesis produces.
@@ -158,7 +168,7 @@ The intersection (fresh AND early) is the tightest insider cluster.
 ## FAQ
 
 **How many fresh wallets should I worry about?**
-Raw count matters less than combined supply share. 5 fresh wallets holding 20% combined is much worse than 50 fresh wallets holding 2% combined. Target: look at `total_percent`, not `fresh_count`.
+Raw count matters less than combined supply share. 5 fresh wallets holding 20% combined is much worse than 50 fresh wallets holding 2% combined. Target: look at `supply_controlled`, not `fresh_count`.
 
 **Does /fresh detect wallets that laundered through multiple hops?**
 No — `/fresh` is a single-hop heuristic (wallet age + tx count + supply share). A team that funds wallet A, then wallet A funds wallet B, then B buys the token, will look "organic" to `/fresh` because B has graph history. Use `/links` on suspicious fresh wallets to trace funding multiple hops deep.
@@ -170,7 +180,7 @@ Below that, every pump.fun launch has hundreds of micro-holders with fresh walle
 Yes. The logic is token-agnostic; it only needs the token's mint timestamp and a holder list. Works on Raydium/Meteora launches too.
 
 **How fresh is "fresh"?**
-No fixed number — the analysis compares each wallet's first-tx age to the token's mint age and weighs it against total tx count. A 5-day-old wallet with 2 transactions is fresh. A 30-day-old wallet with 200 transactions is not.
+The threshold is <100 prior transactions. In practice, flagged wallets usually have under 20. The analysis compares each wallet's first-tx age to the token's mint age and weighs it against total tx count. A 5-day-old wallet with 2 transactions is fresh. A 30-day-old wallet with 200 transactions is not.
 
 **Does /fresh update when I rerun it?**
 Yes, every call is computed live. If fresh wallets dump their position below the 0.05% threshold, they drop out of the next response.
@@ -194,7 +204,7 @@ Yes, every call is computed live. If fresh wallets dump their position below the
       "author": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "publisher": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "datePublished": "2026-04-17",
-      "dateModified": "2026-04-17",
+      "dateModified": "2026-04-20",
       "keywords": "fresh wallet detection, solana insider wallets, pump.fun wallet analysis, new wallet holders"
     },
     {

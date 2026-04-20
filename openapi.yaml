@@ -393,11 +393,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [token]
-                properties:
-                  token:
-                    $ref: "#/components/schemas/UnifiedTokenInfo"
+                $ref: "#/components/schemas/UnifiedTokenInfo"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -964,9 +960,13 @@ paths:
                     $ref: "#/components/schemas/WalletData"
                   wallet_info:
                     $ref: "#/components/schemas/WalletInfo"
+                  profit_stat_1d:
+                    $ref: "#/components/schemas/ProfitStat"
                   profit_stat_7d:
                     $ref: "#/components/schemas/ProfitStat"
                   profit_stat_30d:
+                    $ref: "#/components/schemas/ProfitStat"
+                  profit_stat_all:
                     $ref: "#/components/schemas/ProfitStat"
                   sol_balance:
                     type: integer
@@ -1448,48 +1448,6 @@ paths:
                   slots_in_epoch:
                     type: integer
                     format: uint64
-
-  /api/v1/chain/fees:
-    get:
-      operationId: chainFees
-      tags: [On-Chain Data]
-      summary: Priority fee estimates
-      description: Returns priority fee level estimates, optionally scoped to specific accounts.
-      x-rate-limit: Light
-      security:
-        - ApiKey: []
-      parameters:
-        - name: accounts
-          in: query
-          schema:
-            type: string
-          description: Comma-separated list of account public keys to scope fee estimates
-          example: "So11111111111111111111111111111111111111112,EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-      responses:
-        "200":
-          description: Fee estimates
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [priorityFeeLevels]
-                properties:
-                  priorityFeeLevels:
-                    type: object
-                    required: [min, low, medium, high, veryHigh, unsafeMax]
-                    properties:
-                      min:
-                        type: number
-                      low:
-                        type: number
-                      medium:
-                        type: number
-                      high:
-                        type: number
-                      veryHigh:
-                        type: number
-                      unsafeMax:
-                        type: number
 
   # ──────────────────────────────────────────────
   # Analytics Proxy
