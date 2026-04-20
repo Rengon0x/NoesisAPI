@@ -9,7 +9,7 @@ slug: wallet-pnl-profile
 
 # How to get a full PnL profile for any Solana wallet
 
-**TL;DR.** Noesis's `/walletchecker` analysis returns a full trading profile for any Solana wallet: SOL balance, total PnL, 1/7/30-day PnL, win rate, trade counts by type, risk flags (scam touches, MEV exposure), and Solscan label. One call to `GET /api/v1/wallet/{addr}` replaces cycling through GMGN + Solscan + Birdeye manually.
+**TL;DR.** Noesis's `/walletchecker` analysis returns a full trading profile for any Solana wallet: SOL balance, holdings, funding source, win rate and PnL across four time windows (1d, 7d, 30d, all-time), trade counts, and Solscan identity. One call to `GET /api/v1/wallet/{addr}` replaces cycling through GMGN + Solscan + Birdeye manually.
 
 ## Why wallet PnL profiling matters
 
@@ -24,25 +24,27 @@ Single lookup, answers all four.
 
 ## What does /walletchecker return?
 
-The response has four sections:
+Every call returns:
 
-1. **Position** — SOL balance, combined portfolio USD value
-2. **PnL timeline** — total, 30-day, 7-day, 1-day realized + unrealized profit
-3. **Activity** — trade count broken down by type (buy, sell, swap), average hold time, last trade timestamp
-4. **Risk flags** — scam token touches, MEV exposure, freezable-token interactions, and Solscan identity label
+1. **Identity** — `wallet_data` (name, tags, social), `wallet_info`, Solscan `label`, `tags`, `domains` (.sol names)
+2. **Position** — live `sol_balance`, current holdings breakdown, `funding` (funder address + labeled source)
+3. **Profit stats across 4 periods** — `profit_stat_1d`, `profit_stat_7d`, `profit_stat_30d`, `profit_stat_all`. Each gives win rate, realized + unrealized PnL, trade counts, and avg hold time for that window.
+4. **Holdings & identity enrichment** — token balances with USD values, exchange/protocol labels from Helius
 
-Supports configurable timeframe — default `30d`, can also request `1d`, `7d`, or custom.
+All four periods are returned in every response. Pick whichever you need from the response — no query param needed.
 
 ## How does Noesis build the profile?
 
-The analysis fans out four upstream calls:
+The analysis fans out several upstream calls in parallel:
 
 - **GMGN wallet-data** — name, Twitter, tags, social context
-- **GMGN profit-stat** (1d/7d/30d windows) — PnL, win rate, trade counts
+- **GMGN profit-stat** (×4: 1d / 7d / 30d / all) — PnL, win rate, trade counts per window
 - **Solana RPC `getBalance`** — live SOL balance
-- **Solscan label lookup** — identity, risk flags
+- **Helius wallet balances + identity** — holdings, protocol labels
+- **GMGN funding** — first funder address + labeled source (CEX/protocol)
+- **Solscan label lookup** — identity + `.sol` domain list
 
-Results are cached briefly in the Noesis DB so repeat lookups are instant. The first call is typically 1-3 seconds.
+All calls run in parallel so the first call is typically 1-3 seconds.
 
 ## How to run the analysis
 
@@ -52,11 +54,7 @@ Results are cached briefly in the Noesis DB so repeat lookups are instant. The f
 /walletchecker 9aB7...Kzm2
 ```
 
-Aliases: `/wc`, `/wallet`, `/w`. Optional timeframe:
-
-```
-/wc 9aB7...Kzm2 7d
-```
+Aliases: `/wc`, `/wallet`.
 
 Typical output:
 
@@ -64,31 +62,28 @@ Typical output:
 💰 Wallet Profile · 9aB7...Kzm2
 Label: "@alpha_caller"
 Balance: 312.4 SOL · Portfolio: $680k
+Funded by: Kucoin · 1.2 SOL
 
-PnL (30d)
-  Total: +$180,400 (+26.5%)
-  Win rate: 71%
-  Trades: 214 (buy 108 · sell 106)
-
-Risk flags: ✓ clean
+PnL 7d:  +$42k (71% WR · 108 trades)
+PnL 30d: +$180k (68% WR · 214 trades)
 ```
 
 ### REST API
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/wallet/9aB7...Kzm2?period=30d"
+  "https://noesisapi.dev/api/v1/wallet/9aB7...Kzm2"
 ```
 
 ### MCP
 
 ```
-wallet_profile(address="9aB7...Kzm2", period="30d")
+wallet_profile(address="9aB7...Kzm2")
 ```
 
 or prompt:
 
-> Give me a full 30-day profile of Solana wallet 9aB7...Kzm2: SOL balance, PnL, win rate, trade counts, and any risk flags.
+> Give me a full profile of Solana wallet 9aB7...Kzm2: SOL balance, 7d and 30d PnL, win rate, trade counts, and identity labels.
 
 ### SDKs
 
@@ -96,35 +91,43 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const w = await noesis.wallet.profile("9aB7...", { period: "30d" });
+const w = await noesis.wallet.profile("9aB7...");
+// Pick the period you want from the response:
+console.log(w.profit_stat_30d.winrate, w.profit_stat_7d.realized_profit);
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-w = noesis.wallet.profile("9aB7...", period="30d")
+w = noesis.wallet.profile("9aB7...")
+print(w["profit_stat_30d"]["winrate"], w["profit_stat_7d"]["realized_profit"])
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let w = client.wallet().profile("9aB7...", "30d").await?;
+let client = noesis_api::Noesis::new(api_key);
+let w = client.wallet_profile("9aB7...").await?;
 ```
 
 ## Understanding the output
 
-- `address`, `label`, `name`, `twitter`, `followers`
-- `sol_balance` — live SOL
-- `portfolio_usd` — combined USD across all holdings
-- `pnl_total_usd`, `pnl_total_percent`
-- `pnl_30d_usd`, `pnl_30d_percent`
-- `pnl_7d_usd`, `pnl_7d_percent`
-- `pnl_1d_usd`, `pnl_1d_percent`
-- `win_rate_30d` — percentage of profitable trades
-- `trades_30d` — `{ buys, sells, total }`
-- `last_trade_at`, `avg_hold_time`
-- `risk_flags` — `{ scam_touches, mev_exposed, freezable_interacted }`
+- `address`, `chain`, `label`, `tags`, `domains` — identity fields
+- `wallet_data` — GMGN wallet-level stats (name, Twitter, tags, overall PnL)
+- `wallet_info` — GMGN info (avatar, social, KOL flags)
+- `sol_balance` — live SOL balance in lamports
+- `funding` — `{ funder, funder_name, amount }` — first SOL funder of the wallet
+- `holdings` — token balances (Helius DAS format, includes USD values)
+- `identity` — Helius identity/label enrichment
+- `profit_stat_1d` / `profit_stat_7d` / `profit_stat_30d` / `profit_stat_all` — each with:
+  - `realized_profit`, `unrealized_profit`, `total_profit`
+  - `total_profit_pnl` (percentage)
+  - `winrate` — 0.0-1.0
+  - `buy`, `sell` — trade counts
+  - `avg_holding_period` — seconds
+  - `token_num` — distinct tokens traded in the window
+  - PnL bucket counts: `pnl_lt_nd5_num`, `pnl_nd5_0x_num`, `pnl_0x_2x_num`, `pnl_2x_5x_num`, `pnl_gt_5x_num`
+  - Risk counters: `token_honeypot`, `fast_tx`
 
 ## How to combine /walletchecker with other commands
 

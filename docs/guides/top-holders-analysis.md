@@ -73,13 +73,13 @@ Typical output (page 1 of 2):
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../top-holders?limit=20"
+  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../top-holders"
 ```
 
 ### MCP
 
 ```
-token_top_holders(mint="EPjF...1v", limit=20)
+token_top_holders(mint="EPjF...1v")
 ```
 
 or prompt:
@@ -92,33 +92,31 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const th = await noesis.token.topHolders("EPjFWdd5...", { limit: 20 });
+const th = await noesis.token.topHolders("EPjFWdd5...");
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-th = noesis.token.top_holders("EPjFWdd5...", limit=20)
+th = noesis.token.top_holders("EPjFWdd5...")
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let th = client.token().top_holders("EPjFWdd5...", 20).await?;
+let client = noesis_api::Noesis::new(api_key);
+let th = client.token_top_holders("EPjFWdd5...").await?;
 ```
 
 ## Understanding the output
 
-- `holders[]` — each holder with:
-  - `rank`, `address`
-  - `amount`, `percent_supply`
-  - `label` — Solscan label
-  - `name`, `twitter`, `followers` — GMGN/KOL enrichment
-  - `pnl_usd_30d`, `win_rate_30d`, `trades_30d`
-  - `portfolio_usd`
-- `total_holders` — full holder count context
-- `limit` — echo of requested limit
+- `token` — basic token info
+- `holders[]` — top 20 holders, each with:
+  - `address`, `amount_percentage`, `usd_value`
+  - `wallet_data` — GMGN PnL/winrate/trade counts
+  - `profit_stat` — period-scoped trading stats
+  - `funder`, `funder_name` — funding source
+  - `label`, `tags` — Solscan/KOL enrichment
 
 ## How to combine /topholders with other commands
 
@@ -163,9 +161,8 @@ let th = client.token().top_holders("EPjFWdd5...", 20).await?;
 ## Caveats
 
 - **Solana only.**
-- **Requires auth** — 1 req / 5 sec.
-- **`limit` clamped to 50 per call**; use pagination in the bot for deeper lists.
-- **Only top 20 are fully enriched per page** (GMGN wallet-data calls are the slow leg). Raw position data is available for the rest.
+- **Requires auth** — 1 req / 5 sec (Heavy tier).
+- **Returns top 20** fully enriched holders (GMGN wallet-data calls are the slow leg). The bot paginates through a longer list via inline buttons; the REST endpoint returns the enriched top 20.
 
 ## FAQ
 

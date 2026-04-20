@@ -85,13 +85,13 @@ The bot attaches inline buttons for one-click drill-down into Top Holders, Best 
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../scan?top_holders=10"
+  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../scan"
 ```
 
 ### MCP
 
 ```
-token_scan(mint="EPjF...1v", top_holders=10)
+token_scan(mint="EPjF...1v")
 ```
 
 or prompt:
@@ -104,20 +104,20 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const scan = await noesis.token.scan("EPjFWdd5...", { topHolders: 10 });
+const scan = await noesis.token.scan("EPjFWdd5...");
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-scan = noesis.token.scan("EPjFWdd5...", top_holders=10)
+scan = noesis.token.scan("EPjFWdd5...")
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let scan = client.token().scan("EPjFWdd5...", 10).await?;
+let client = noesis_api::Noesis::new(api_key);
+let scan = client.token_scan("EPjFWdd5...").await?;
 ```
 
 ## Understanding the output
@@ -125,7 +125,7 @@ let scan = client.token().scan("EPjFWdd5...", 10).await?;
 - `metadata` — `{ name, symbol, decimals, supply, mint, mint_authority, freeze_authority, update_authority }`
 - `security` — `{ honeypot, freezeable, burnable, transfer_fee_bps }`
 - `market` — `{ price_usd, market_cap_usd, liquidity_usd, volume_24h_usd, best_pair }`
-- `top_holders[]` — each with `address`, `label`, `amount`, `percent_supply`
+- `top_traders[]` — each with `address`, `label`, and GMGN trader data (PnL, winrate, portfolio)
 - `holder_stats` — `{ sniper_pct, bot_pct, bundler_pct, fresh_pct, holder_count }`
 - `dex_paid` — `{ paid, services[] }`
 
@@ -173,8 +173,7 @@ let scan = client.token().scan("EPjFWdd5...", 10).await?;
 ## Caveats
 
 - **Solana only.**
-- **Requires auth** — 1 req / 5 sec.
-- **`top_holders` clamped to 1-100** per call.
+- **Requires auth** — 1 req / 5 sec (Heavy tier).
 - **Not a replacement for deeper analysis** — use `/scan` as the first pass, then drill via `/team`, `/bundle`, `/fresh`, `/dev`.
 
 ## FAQ

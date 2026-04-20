@@ -23,7 +23,7 @@ Good team detection clusters these wallets back into a single economic actor and
 
 `/team` flags a holder wallet if it matches any of three patterns:
 
-1. **Fresh** — The wallet was created within a short window before the token launched, has almost no prior transactions, and is holding a meaningful share (≥0.05% of supply). Fresh-funded wallets are the clearest insider signal on pump.fun.
+1. **Fresh** — The wallet was created within a short window before the token launched, has fewer than 100 prior transactions, and is holding a meaningful share (≥0.1% of supply). Fresh-funded wallets are the clearest insider signal on pump.fun.
 2. **Inactive / sleeper** — An older wallet with little or no trading history that suddenly holds a large position. Teams reuse dormant addresses to avoid the "fresh wallet" heuristic.
 3. **Linked** — A wallet connected by SOL transfers to a common hub (dev wallet, deployer, another flagged wallet). Traced via the same engine that powers `/links`.
 
@@ -52,16 +52,16 @@ One detail worth calling out: **a wallet funded from a known CEX is not automati
 Typical output:
 
 ```
-📊 🆕 Fresh: 8% · 💤 Inactive: 3% · 🔗 Linked: 22%
-Supply controlled by team/insiders: 33%
+👥 Team Supply Analysis for EPjFWdd5...
+EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 
-🔗 Linked wallets (12)
-  1. 7xKX...9zF2 — 5.2% · funded via Kucoin (3d ago)
-  2. 4bBa...pLm1 — 4.8% · funded via Kucoin (3d ago)
-  ...
+⚠️ Supply controlled by team/insiders: 33.2% 🔴
+🔍 Wallets flagged: 24
+
+📊 🆕 Fresh: 8% · 💤 Inactive: 3% · 🔗 Linked: 22%
 
 🏦 Exchange Funding Clusters
-  • Kucoin → 9 wallets · 18% supply · all funded within 47 min
+  • Kucoin — 9 wallets · 18% supply ⚠️ 9 funded within 1h
 ```
 
 ### REST API
@@ -90,7 +90,7 @@ Or prompt in natural language:
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
 const team = await noesis.token.teamSupply("EPjFWdd5...");
-console.log(`${team.totalPercent}% team-controlled`);
+console.log(`${team.supply_controlled}% team-controlled`);
 ```
 
 **Python** — `pip install noesis-api`
@@ -98,31 +98,33 @@ console.log(`${team.totalPercent}% team-controlled`);
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
 team = noesis.token.team_supply("EPjFWdd5...")
-print(f"{team.total_percent}% team-controlled")
+print(f"{team['supply_controlled']}% team-controlled")
 ```
 
 **Rust** — `cargo add noesis-api`
 ```rust
-let client = noesis_api::Client::from_env()?;
-let team = client.token().team_supply("EPjFWdd5...").await?;
-println!("{}% team-controlled", team.total_percent);
+let client = noesis_api::Client::new(api_key);
+let team = client.token_team_supply("EPjFWdd5...", Chain::Sol).await?;
+println!("{}% team-controlled", team.get("supply_controlled").unwrap());
 ```
 
 ## Understanding the output
 
 Every response contains:
 
-- `total_percent` — combined team supply share across all three categories
-- `category_breakdown` — `{ fresh, inactive, linked }` as individual percentages
+- `supply_controlled` — combined team supply share across all three categories
+- `team_count` — number of wallets flagged
+- `total_analyzed` — total holders examined
 - `wallets[]` — every flagged wallet with:
   - `address`
-  - `category` — `fresh`, `inactive`, or `linked`
-  - `percent_supply`
-  - `amount`
+  - `category` — `Fresh`, `Inactive`, or `Linked`
+  - `percentage`
+  - `balance`
   - `funder` — CEX/protocol name if known, else the funder address
-  - `funded_ago` — human-readable delta (`3d`, `5h`, `12m`)
+  - `funder_name` — human-readable funder name
+  - `locked` — true if funds are escrow-locked (excluded from control count)
   - `label` — Solscan label if one exists
-- `exchange_clusters[]` — only populated when a funder has ≥5% supply downstream or fires the time-correlation rule; each entry lists the CEX, wallet count, combined supply share, and time spread
+- Exchange funding clusters (if any funder has ≥5% supply or 3+ wallets funded within 60 minutes)
 
 ## How to combine /team with other commands
 
@@ -199,7 +201,7 @@ Every call is computed live against current chain state — there's no cache. If
       "author": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "publisher": { "@type": "Organization", "name": "Noesis", "url": "https://noesisapi.dev" },
       "datePublished": "2026-04-17",
-      "dateModified": "2026-04-17",
+      "dateModified": "2026-04-20",
       "keywords": "solana team supply, insider wallet detection, pump.fun team analysis, solana token security"
     },
     {

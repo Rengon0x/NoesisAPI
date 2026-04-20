@@ -42,8 +42,6 @@ Ranked by combined USD value descending so the biggest ecosystem whales surface 
 - Price per token pulled from DexScreener best-pair for USD math
 - Solscan labels fetched for the top results
 
-You can also set a minimum combined USD value filter to ignore small dust positions.
-
 ## How to run the analysis
 
 ### Telegram bot
@@ -52,20 +50,14 @@ You can also set a minimum combined USD value filter to ignore small dust positi
 /cross EPjFWdd5... mint_b... mint_c...
 ```
 
-With minimum filter:
-
-```
-/cross mint_a mint_b mint_c 20000
-```
-
 Typical output:
 
 ```
-🔗 Cross Holders · 3 tokens · min $20k
+🔗 Cross Holders · 3 tokens
 Found 12 wallets holding all 3
 
-  1. 9aB7...Kzm2 · $380k combined · $140k / $120k / $120k
-  2. 4rEp...Nn01 · "KOL: @cryptoalpha" · $215k combined
+  1. 9aB7...Kzm2 · holds: 140k A / 120k B / 120k C
+  2. 4rEp...Nn01 · "KOL: @cryptoalpha" · holds: 80k A / 75k B / 60k C
   3. ...
 ```
 
@@ -74,19 +66,19 @@ Found 12 wallets holding all 3
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
   -X POST -H "Content-Type: application/json" \
-  -d '{"tokens": ["mint_a", "mint_b", "mint_c"], "min_combined_usd": 20000}' \
+  -d '{"tokens": ["mint_a", "mint_b", "mint_c"]}' \
   "https://noesisapi.dev/api/v1/tokens/cross-holders"
 ```
 
 ### MCP
 
 ```
-cross_holders(tokens=["mint_a", "mint_b", "mint_c"], min_combined_usd=20000)
+cross_holders(tokens=["mint_a", "mint_b", "mint_c"])
 ```
 
 or prompt:
 
-> Find wallets holding all three tokens: mint_a, mint_b, mint_c. Only include wallets with at least $20k combined value.
+> Find wallets holding all three tokens: mint_a, mint_b, mint_c.
 
 ### SDKs
 
@@ -94,31 +86,31 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const cx = await noesis.tokens.crossHolders(["mint_a", "mint_b", "mint_c"], { minCombinedUsd: 20000 });
+const cx = await noesis.wallet.crossHolders(["mint_a", "mint_b", "mint_c"]);
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-cx = noesis.tokens.cross_holders(["mint_a", "mint_b", "mint_c"], min_combined_usd=20000)
+cx = noesis.wallet.cross_holders(["mint_a", "mint_b", "mint_c"])
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let cx = client.tokens().cross_holders(&["mint_a", "mint_b", "mint_c"]).await?;
+let client = noesis_api::Noesis::new(api_key);
+let cx = client.cross_holders(&["mint_a".into(), "mint_b".into(), "mint_c".into()]).await?;
 ```
 
 ## Understanding the output
 
-- `wallets[]` — each common holder with:
-  - `address`, `label`
-  - `positions[]` — per-token `{ mint, amount, value_usd }`
-  - `combined_usd` — sum of position USD values
-- `tokens[]` — echo of input with metadata (name, price)
-- `total_common` — wallet count before/after filter
-- `filter` — applied `min_combined_usd`
+- `tokens[]` — input token list with basic metadata (name, price, decimals)
+- `cross_holders[]` — each wallet holding all supplied tokens:
+  - `wallet` — address
+  - `balances` — map of `{ mint → raw_balance (u64) }` per input token
+  - `label`, `tags`, `domains` — Solscan/KOL enrichment
+
+Combined USD value is computed client-side from `balances` × `tokens[].price`.
 
 ## How to combine /cross with other commands
 
@@ -179,7 +171,7 @@ By default, the sum of the wallet's USD value across the tokens you provided. So
 Not directly. A wash-trading farm that holds 100+ tokens will surface as a "power holder" but that's noise, not signal. Filter by minimum combined USD and cross-check with `/walletchecker` to identify bot patterns.
 
 **What's the max intersection size I should expect?**
-For 3 long-tail meme coins, usually 5-50 wallets. For 3 very popular tokens, hundreds to thousands. The `min_combined_usd` filter is the main lever for keeping results actionable.
+For 3 long-tail meme coins, usually 5-50 wallets. For 3 very popular tokens, hundreds to thousands. Filter client-side by combined USD value (balances × token prices) to keep results actionable.
 
 **Does /cross work across chains?**
 No — Solana only. Same-token-same-holder cross-chain analysis is not supported.
@@ -223,7 +215,7 @@ No — Solana only. Same-token-same-holder cross-chain analysis is not supported
         {
           "@type": "Question",
           "name": "Can /cross detect wash-traded holdings?",
-          "acceptedAnswer": { "@type": "Answer", "text": "Not directly. Wash-trading farms surface as power holders but that's noise. Filter by min_combined_usd and verify with /walletchecker." }
+          "acceptedAnswer": { "@type": "Answer", "text": "Not directly. Wash-trading farms surface as power holders but that's noise. Filter client-side by combined USD value and verify with /walletchecker." }
         }
       ]
     }

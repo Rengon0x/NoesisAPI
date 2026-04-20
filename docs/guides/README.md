@@ -8,7 +8,7 @@ Every guide works four ways: **Telegram bot**, **REST API**, **MCP (for AI agent
 
 - **[How to scan any Solana token for security and insider signals](./scan-solana-token.md)** — `/scan`, `token_scan` — full audit entry point
 - **[How to find team-controlled supply on a Solana token](./find-team-supply.md)** — `/team`, `token_team_supply` — insider cluster detection
-- **[How to detect bundled buys on pump.fun launches](./detect-bundles-pumpfun.md)** — `/bundle`, `token_bundles` — same-slot coordination
+- **[How to detect bundled buys on Solana tokens](./detect-bundles-solana.md)** — `/bundle`, `token_bundles` — same-slot coordination (pump.fun, Moonshot, Raydium, Meteora)
 - **[How to spot fresh-wallet insider activity](./fresh-wallet-detection.md)** — `/fresh`, `token_fresh_wallets` — new-wallet scan
 - **[How to profile the dev of a Solana meme coin](./profile-solana-dev.md)** — `/dev`, `token_dev_profile` — creator history
 - **[How to find the first buyers of a Solana token](./first-buyers-solana.md)** — `/earlybuyers`, `token_early_buyers` — time-windowed buyer list

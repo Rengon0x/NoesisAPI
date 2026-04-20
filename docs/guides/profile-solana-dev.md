@@ -61,14 +61,13 @@ Typical output:
 
 ```
 🧑‍💻 Dev Profile
-Wallet: 8hJk...2mQp · "TokenFactory"
+Creator: 8hJk...2mQp · "TokenFactory"
 
-Prior launches: 14
-  Alive: 2 (14%)
-  Dead: 11 (< 10% BC)
-  Migrated: 1
+Created coins: 14
+  Graduated: 3
+  Still on curve: 11
 
-Funded by: Kucoin (2 min before deploy)
+Funded by: Kucoin · 0.5 SOL
 First activity: 6 days ago
 ```
 
@@ -96,7 +95,8 @@ or prompt:
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
 const dev = await noesis.token.devProfile("EPjFWdd5...");
-console.log(`${dev.priorLaunches} launches, ${dev.successRate}% alive`);
+console.log(`creator: ${dev.creator}`);
+console.log(`created ${dev.created_coins.length} coins`);
 ```
 
 **Python**
@@ -104,26 +104,30 @@ console.log(`${dev.priorLaunches} launches, ${dev.successRate}% alive`);
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
 dev = noesis.token.dev_profile("EPjFWdd5...")
-print(dev.prior_launches, dev.success_rate)
+print(dev["creator"], len(dev["created_coins"]))
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let dev = client.token().dev_profile("EPjFWdd5...").await?;
-println!("{} launches, {}%", dev.prior_launches, dev.success_rate);
+let client = noesis_api::Noesis::new(api_key);
+let dev = client.token_dev_profile("EPjFWdd5...").await?;
 ```
 
 ## Understanding the output
 
-- `dev_wallet` — address of the creator
-- `dev_label` — Solscan label or KOL-cache name if known
-- `prior_launches` — total count of previous tokens launched by the same wallet
-- `prior_tokens[]` — each prior launch with mint, name, state (`alive` / `dead` / `migrated` / `graduated`), current market cap
-- `success_rate` — percentage of prior launches still above the threshold
-- `funder` — CEX/protocol name if known, else address
-- `funder_age` — time between dev wallet funding and first token deploy (short = CEX-funded-right-before-launch)
-- `wallet_age_days` — how long the dev wallet has existed
+- `token` — basic token info for the scanned mint
+- `creator` — address of the token creator
+- `wallet_data` — GMGN PnL/winrate/trade data on the creator wallet
+- `wallet_info` — name, avatar, tags, KOL enrichment
+- `created_coins[]` — each prior launch:
+  - `mint` — token address
+  - `name`, `symbol` — token metadata
+  - `market_cap`, `usd_market_cap` — current cap
+  - `complete` — boolean; `true` if the token graduated from the bonding curve (i.e. migrated to Raydium/Meteora), `false` if still on-curve
+  - `created_timestamp` — Unix timestamp of launch
+- `funding` — `{ funder, funder_name, amount }`: source address, labeled name (CEX/protocol if known), SOL amount
+
+Graduation rate = `created_coins.filter(c => c.complete).length / created_coins.length`. Compute client-side.
 
 ## How to combine /dev with other commands
 

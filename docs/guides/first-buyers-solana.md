@@ -58,12 +58,12 @@ or the alias `/eb`. The two trailing args are optional — defaults are `1h` and
 Typical output:
 
 ```
-⏱️ Early Buyers · first 1h · ≥1% supply
-Found 9 qualifying wallets
+⏱️ Early Buyers · first 1h
+Scanned 8,432 transactions · 47 buyers
 
-  1. 7xKX...9zF2 — 3.2% · entry 0:04 · +$12,400 PnL
-  2. 4bBa...pLm1 — 2.8% · entry 0:06 · +$10,100 PnL
-  3. Gx9w...Qr71 — 1.9% · entry 0:11 · -$2,300 PnL
+  1. 7xKX...9zF2 — Bought: 12.4 SOL | 3.2%
+  2. 4bBa...pLm1 — Bought: 10.8 SOL | 2.8% · "KOL: @alpha"
+  3. Gx9w...Qr71 — Bought:  7.5 SOL | 1.9%
   ...
 ```
 
@@ -71,18 +71,18 @@ Found 9 qualifying wallets
 
 ```bash
 curl -H "X-API-Key: $NOESIS_API_KEY" \
-  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../early-buyers?hours=1&min_percent=1"
+  "https://noesisapi.dev/api/v1/token/EPjFWdd5.../early-buyers?hours=1"
 ```
 
 ### MCP
 
 ```
-token_early_buyers(mint="EPjF...1v", hours=1, min_percent=1)
+token_early_buyers(mint="EPjF...1v", hours=1)
 ```
 
 or prompt:
 
-> List early buyers of token EPjF...1v in the first hour holding at least 1% of supply. Include entry time and current PnL.
+> List early buyers of token EPjF...1v in the first hour. Include the transaction signatures, SOL spent, and token amounts.
 
 ### SDKs
 
@@ -90,40 +90,39 @@ or prompt:
 ```ts
 import { Noesis } from "noesis-api";
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
-const eb = await noesis.token.earlyBuyers("EPjFWdd5...", { hours: 1, minPercent: 1 });
-eb.wallets.forEach(w => console.log(w.address, w.percentSupply, w.pnlUsd));
+const eb = await noesis.token.earlyBuyers("EPjFWdd5...", { hours: 1 });
+eb.buyers.forEach(b => console.log(b.address, b.sol_spent, b.timestamp));
 ```
 
 **Python**
 ```python
 from noesis import Noesis
 noesis = Noesis(api_key=os.environ["NOESIS_API_KEY"])
-eb = noesis.token.early_buyers("EPjFWdd5...", hours=1, min_percent=1)
-for w in eb.wallets:
-    print(w.address, w.percent_supply, w.pnl_usd)
+eb = noesis.token.early_buyers("EPjFWdd5...", hours=1)
+for b in eb["buyers"]:
+    print(b["address"], b["sol_spent"], b["timestamp"])
 ```
 
 **Rust**
 ```rust
-let client = noesis_api::Client::from_env()?;
-let eb = client.token().early_buyers("EPjFWdd5...", 1.0, 1.0).await?;
-for w in eb.wallets { println!("{} {}% {}", w.address, w.percent_supply, w.pnl_usd); }
+let client = noesis_api::Noesis::new(api_key);
+let eb = client.token_early_buyers("EPjFWdd5...", 1.0).await?;
 ```
 
 ## Understanding the output
 
-- `wallets[]` — each early buyer with:
-  - `address`
-  - `percent_supply` — current held percentage
-  - `amount` — current held token amount
-  - `entry_time` — seconds/minutes from mint
-  - `entry_amount` — tokens bought in the window
-  - `entry_price` — average USD entry per token
-  - `pnl_usd` — realized + unrealized PnL in USD
-  - `label` — Solscan label if present (DEX addresses already filtered)
-- `window_hours` — echo of the requested time window
-- `min_percent` — echo of the supply floor
-- `total_supply` and `decimals` — for client-side math
+- `token` — basic token info
+- `hours` — echo of the requested time window
+- `total_transactions_scanned` — number of txs processed
+- `buyers[]` — each early buyer with:
+  - `address` — buyer wallet
+  - `signature` — on-chain tx signature
+  - `sol_spent` — SOL amount spent in the buy
+  - `token_amount` — tokens received
+  - `timestamp` — Unix timestamp of the buy
+  - `label`, `tags`, `domains` — Solscan enrichment (DEX addresses filtered)
+
+Supply-percent filtering can be applied client-side using `token_amount / token.total_supply`.
 
 ## How to combine /earlybuyers with other commands
 
