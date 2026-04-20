@@ -10,6 +10,8 @@ export interface NoesisError {
   details?: unknown;
 }
 
+export type Chain = "sol" | "base";
+
 export class Noesis {
   readonly token: TokenClient;
   readonly wallet: WalletClient;
@@ -85,49 +87,127 @@ class HttpClient {
 
 class TokenClient {
   constructor(private http: HttpClient) {}
-  preview(mint: string, chain: "sol" | "base" = "sol") {
+
+  /** Flat token metadata + price + pools. Light rate limit. */
+  preview(mint: string, chain: Chain = "sol") {
     return this.http.get<unknown>(`/token/${mint}/preview`, { chain });
   }
-  scan(mint: string, chain: "sol" | "base" = "sol") {
+
+  /** Full scan: holders, bundles, fresh wallets, dev profile. Heavy rate limit. */
+  scan(mint: string, chain: Chain = "sol") {
     return this.http.get<unknown>(`/token/${mint}/scan`, { chain });
   }
-  topHolders(mint: string, chain: "sol" | "base" = "sol") {
+
+  /** Detailed on-chain token metadata — authorities, supply, raw DAS asset. Light rate limit. */
+  info(mint: string, chain: Chain = "sol") {
+    return this.http.get<unknown>(`/token/${mint}/info`, { chain });
+  }
+
+  /** Top 20 holders with labels/tags. Heavy rate limit. */
+  topHolders(mint: string, chain: Chain = "sol") {
     return this.http.get<unknown>(`/token/${mint}/top-holders`, { chain });
   }
+
+  /** Paginated full holders list (up to 1000 per page). Light rate limit. */
+  holders(mint: string, opts: { chain?: Chain; limit?: number; cursor?: string } = {}) {
+    return this.http.get<unknown>(`/token/${mint}/holders`, {
+      chain: opts.chain ?? "sol",
+      limit: opts.limit,
+      cursor: opts.cursor,
+    });
+  }
+
+  /** Bundle (sybil buy) detection. Heavy rate limit. */
   bundles(mint: string) {
     return this.http.get<unknown>(`/token/${mint}/bundles`);
   }
+
+  /** Fresh wallet detection — wallets with no prior on-chain activity. Heavy rate limit. */
   freshWallets(mint: string) {
     return this.http.get<unknown>(`/token/${mint}/fresh-wallets`);
   }
-  devProfile(mint: string) {
-    return this.http.get<unknown>(`/token/${mint}/dev-profile`);
+
+  /** Team/insider supply detection via funding pattern clustering. Heavy rate limit. */
+  teamSupply(mint: string, chain: Chain = "sol") {
+    return this.http.get<unknown>(`/token/${mint}/team-supply`, { chain });
   }
-  bestTraders(mint: string, chain: "sol" | "base" = "sol") {
+
+  /** Holder entry prices, realized & unrealized PnL. Heavy rate limit. */
+  entryPrice(mint: string, chain: Chain = "sol") {
+    return this.http.get<unknown>(`/token/${mint}/entry-price`, { chain });
+  }
+
+  /** Token creator profile — wallet data, prior coins, funding source. Heavy rate limit. */
+  devProfile(mint: string, chain: Chain = "sol") {
+    return this.http.get<unknown>(`/token/${mint}/dev-profile`, { chain });
+  }
+
+  /** Most profitable traders, enriched with labels. Heavy rate limit. */
+  bestTraders(mint: string, chain: Chain = "sol") {
     return this.http.get<unknown>(`/token/${mint}/best-traders`, { chain });
   }
-  earlyBuyers(mint: string, hours = 1) {
-    return this.http.get<unknown>(`/token/${mint}/early-buyers`, { hours });
+
+  /** Buyers within N hours after token creation. Heavy rate limit. */
+  earlyBuyers(mint: string, opts: { chain?: Chain; hours?: number } = {}) {
+    return this.http.get<unknown>(`/token/${mint}/early-buyers`, {
+      chain: opts.chain ?? "sol",
+      hours: opts.hours ?? 1,
+    });
   }
 }
 
+export type TxType =
+  | "SWAP" | "TRANSFER" | "NFT_SALE" | "NFT_LISTING"
+  | "COMPRESSED_NFT_MINT" | "TOKEN_MINT" | "UNKNOWN";
+
+export type TxSource =
+  | "JUPITER" | "RAYDIUM" | "ORCA" | "METEORA"
+  | "PUMP_FUN" | "SYSTEM_PROGRAM" | "TOKEN_PROGRAM";
+
 class WalletClient {
   constructor(private http: HttpClient) {}
-  profile(addr: string, chain: "sol" | "base" = "sol") {
+
+  /** Full wallet profile — PnL, holdings, labels, funding. Heavy rate limit. */
+  profile(addr: string, chain: Chain = "sol") {
     return this.http.get<unknown>(`/wallet/${addr}`, { chain });
   }
-  history(addr: string, chain: "sol" | "base" = "sol") {
-    return this.http.get<unknown>(`/wallet/${addr}/history`, { chain });
+
+  /** Parsed transaction history with optional filtering & pagination. Light rate limit. */
+  history(addr: string, opts: {
+    chain?: Chain;
+    limit?: number;
+    type?: TxType;
+    source?: TxSource;
+    before?: string;
+  } = {}) {
+    return this.http.get<unknown>(`/wallet/${addr}/history`, {
+      chain: opts.chain ?? "sol",
+      limit: opts.limit,
+      type: opts.type,
+      source: opts.source,
+      before: opts.before,
+    });
   }
-  connections(addr: string) {
-    return this.http.get<unknown>(`/wallet/${addr}/connections`);
+
+  /** SOL transfer connections (counterparties with net flow). Heavy rate limit. */
+  connections(addr: string, opts: { min_sol?: number; max_pages?: number } = {}) {
+    return this.http.get<unknown>(`/wallet/${addr}/connections`, {
+      min_sol: opts.min_sol,
+      max_pages: opts.max_pages,
+    });
   }
+
+  /** Batch identity lookup — labels/tags/KOL info for up to 100 wallets. Light rate limit. */
   batchIdentity(addresses: string[]) {
     return this.http.post<unknown>(`/wallets/batch-identity`, { addresses });
   }
+
+  /** Wallets holding all specified tokens. Heavy rate limit. */
   crossHolders(tokens: string[]) {
     return this.http.post<unknown>(`/tokens/cross-holders`, { tokens });
   }
+
+  /** Wallets that traded all specified tokens. Heavy rate limit. */
   crossTraders(tokens: string[]) {
     return this.http.post<unknown>(`/tokens/cross-traders`, { tokens });
   }
@@ -135,31 +215,47 @@ class WalletClient {
 
 class ChainClient {
   constructor(private http: HttpClient) {}
+
+  /** Current slot, block height, epoch info. Light rate limit. */
   status() {
     return this.http.get<unknown>(`/chain/status`);
   }
-  fees() {
-    return this.http.get<unknown>(`/chain/fees`);
-  }
+
+  /** Account data (owner, lamports, data) for a single address. Light rate limit. */
   account(addr: string) {
     return this.http.get<unknown>(`/account/${addr}`);
   }
+
+  /** Batch account data for up to 100 addresses. Light rate limit. */
   accountsBatch(addresses: string[]) {
     return this.http.post<unknown>(`/accounts/batch`, { addresses });
+  }
+
+  /** Parse up to 100 transaction signatures into human-readable events. Light rate limit. */
+  parseTransactions(signatures: string[]) {
+    return this.http.post<unknown>(`/transactions/parse`, { transactions: signatures });
   }
 }
 
 class StreamsClient {
   constructor(private http: HttpClient) {}
+
+  /** SSE stream of newly created pump.fun tokens. */
   pumpfunNewTokens() {
     return this.http.stream(`/stream/pumpfun/new-tokens`);
   }
+
+  /** SSE stream of pump.fun bonding-curve graduations. */
   pumpfunMigrations() {
     return this.http.stream(`/stream/pumpfun/migrations`);
   }
+
+  /** SSE stream of new Raydium pools. */
   raydiumNewPools() {
     return this.http.stream(`/stream/raydium/new-pools`);
   }
+
+  /** SSE stream of new Meteora pools. */
   meteoraNewPools() {
     return this.http.stream(`/stream/meteora/new-pools`);
   }

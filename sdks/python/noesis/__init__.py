@@ -3,4 +3,4 @@
 from .client import Noesis, NoesisError
 
 __all__ = ["Noesis", "NoesisError"]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
