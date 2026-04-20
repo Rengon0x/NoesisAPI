@@ -61,32 +61,36 @@ Available streams: `pumpfun_new_tokens`, `pumpfun_migrations`, `raydium_new_pool
 ```python
 client.token.preview(mint, chain="sol")
 client.token.scan(mint, chain="sol")
+client.token.info(mint, chain="sol")
 client.token.top_holders(mint, chain="sol")
+client.token.holders(mint, chain="sol", limit=100, cursor=None)
 client.token.bundles(mint)
 client.token.fresh_wallets(mint)
-client.token.dev_profile(mint)
+client.token.team_supply(mint, chain="sol")
+client.token.entry_price(mint, chain="sol")
+client.token.dev_profile(mint, chain="sol")
 client.token.best_traders(mint, chain="sol")
-client.token.early_buyers(mint, hours=1)
+client.token.early_buyers(mint, hours=1, chain="sol")
 ```
 
 ### Wallet
 
 ```python
 client.wallet.profile(address, chain="sol")
-client.wallet.history(address, chain="sol")
-client.wallet.connections(address)
+client.wallet.history(address, chain="sol", limit=20, type=None, source=None, before=None)
+client.wallet.connections(address, min_sol=0.1, max_pages=20)
 client.wallet.batch_identity(addresses)
 client.wallet.cross_holders(tokens)
 client.wallet.cross_traders(tokens)
 ```
 
-### Chain
+### Chain / on-chain
 
 ```python
 client.chain.status()
-client.chain.fees()
 client.chain.account(address)
 client.chain.accounts_batch(addresses)
+client.chain.parse_transactions(signatures)
 ```
 
 ## Error handling

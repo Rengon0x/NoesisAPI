@@ -61,32 +61,36 @@ const noesis = new Noesis({
 ```typescript
 noesis.token.preview(mint, chain?)
 noesis.token.scan(mint, chain?)
+noesis.token.info(mint, chain?)
 noesis.token.topHolders(mint, chain?)
+noesis.token.holders(mint, { chain?, limit?, cursor? })
 noesis.token.bundles(mint)
 noesis.token.freshWallets(mint)
-noesis.token.devProfile(mint)
+noesis.token.teamSupply(mint, chain?)
+noesis.token.entryPrice(mint, chain?)
+noesis.token.devProfile(mint, chain?)
 noesis.token.bestTraders(mint, chain?)
-noesis.token.earlyBuyers(mint, hours?)
+noesis.token.earlyBuyers(mint, { chain?, hours? })
 ```
 
 ### Wallet methods
 
 ```typescript
 noesis.wallet.profile(address, chain?)
-noesis.wallet.history(address, chain?)
-noesis.wallet.connections(address)
+noesis.wallet.history(address, { chain?, limit?, type?, source?, before? })
+noesis.wallet.connections(address, { min_sol?, max_pages? })
 noesis.wallet.batchIdentity(addresses)
 noesis.wallet.crossHolders(tokens)
 noesis.wallet.crossTraders(tokens)
 ```
 
-### Chain methods
+### Chain / on-chain methods
 
 ```typescript
 noesis.chain.status()
-noesis.chain.fees()
 noesis.chain.account(address)
 noesis.chain.accountsBatch(addresses)
+noesis.chain.parseTransactions(signatures)
 ```
 
 ### Live streams (SSE)

@@ -53,33 +53,46 @@ Get an API key at [noesisapi.dev/keys](https://noesisapi.dev/keys).
 ### Tokens
 
 ```rust
+use noesis_api::{Chain, HoldersOptions};
+
 client.token_preview(mint).await?;
 client.token_scan(mint).await?;
+client.token_info(mint, Chain::Sol).await?;
 client.token_top_holders(mint).await?;
+client.token_holders(mint, HoldersOptions { limit: Some(500), ..Default::default() }).await?;
 client.token_bundles(mint).await?;
 client.token_fresh_wallets(mint).await?;
+client.token_team_supply(mint, Chain::Sol).await?;
+client.token_entry_price(mint, Chain::Sol).await?;
 client.token_dev_profile(mint).await?;
 client.token_best_traders(mint).await?;
-client.token_early_buyers(mint, hours).await?;
+client.token_early_buyers(mint, 1.0).await?;
 ```
 
 ### Wallets
 
 ```rust
+use noesis_api::{HistoryOptions, ConnectionsOptions, TxType};
+
 client.wallet_profile(addr).await?;
-client.wallet_history(addr).await?;
-client.wallet_connections(addr).await?;
+client.wallet_history(addr, HistoryOptions {
+    limit: Some(50),
+    ty: Some(TxType::Swap),
+    ..Default::default()
+}).await?;
+client.wallet_connections(addr, ConnectionsOptions::default()).await?;
 client.wallets_batch_identity(&addresses).await?;
 client.cross_holders(&tokens).await?;
 client.cross_traders(&tokens).await?;
 ```
 
-### Chain
+### Chain / on-chain
 
 ```rust
 client.chain_status().await?;
-client.chain_fees().await?;
 client.account(addr).await?;
+client.accounts_batch(&addresses).await?;
+client.parse_transactions(&signatures).await?;
 ```
 
 ## Custom base URL
