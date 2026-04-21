@@ -95,16 +95,34 @@ client.chain.parse_transactions(signatures)
 
 ## Error handling
 
+Non-2xx responses raise a typed subclass of ``NoesisError``:
+
 ```python
-from noesis import Noesis, NoesisError
+import time
+from noesis import (
+    Noesis, NoesisError,
+    NoesisAuthError, NoesisNotFoundError, NoesisRateLimitError,
+)
 
 client = Noesis(api_key="se_...")
 
 try:
     client.token.preview("<MINT>")
+except NoesisRateLimitError as e:
+    # e.limit == "1 request/5 seconds"
+    # e.limit_type == "Light" | "Heavy" | "VeryHeavy"
+    # e.signed_in is a bool
+    time.sleep(e.retry_after_seconds or 5)
+except NoesisAuthError:
+    print("Invalid or missing API key")
+except NoesisNotFoundError:
+    print("Wallet/token/route not found")
 except NoesisError as e:
     print(e.status, e.message, e.details)
 ```
+
+``retry_after_seconds`` reads the JSON body and falls back to the
+``Retry-After`` response header.
 
 ## Context manager
 

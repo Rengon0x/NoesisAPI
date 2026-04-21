@@ -120,14 +120,30 @@ Available streams: `pumpfunNewTokens`, `pumpfunMigrations`, `raydiumNewPools`, `
 
 ## Error handling
 
+Non-2xx responses are thrown as `NoesisError`, a real `Error` subclass with
+typed fields for rate limits:
+
 ```typescript
+import { Noesis, NoesisError } from "noesis-api";
+
 try {
   const data = await noesis.token.preview("<MINT>");
 } catch (err) {
-  // err: { status: number, message: string, details?: unknown }
-  console.error(err.status, err.message);
+  if (err instanceof NoesisError && err.isRateLimit) {
+    console.log(`Rate limited (${err.limit}); retrying in ${err.retryAfterSeconds}s`);
+    await new Promise(r => setTimeout(r, (err.retryAfterSeconds ?? 5) * 1000));
+  } else if (err instanceof NoesisError && err.status === 401) {
+    console.error("Invalid or missing API key — check process.env.NOESIS_API_KEY");
+  } else {
+    throw err;
+  }
 }
 ```
+
+`NoesisError` fields: `status`, `message`, `details`, and on 429 also
+`retryAfterSeconds`, `limit` (e.g. `"1 request/5 seconds"`), `limitType`
+(`"Light" | "Heavy" | "VeryHeavy"`), and `signedIn`. `retryAfterSeconds`
+falls back to the `Retry-After` response header when the body omits it.
 
 ## Environment support
 

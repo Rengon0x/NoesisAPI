@@ -25,9 +25,10 @@
 //!
 //! # Rate limits
 //!
-//! Endpoints are tagged **Light** (1 req/sec) or **Heavy** (1 req / 5 sec).
-//! The API returns HTTP 429 when you exceed the limit; this surfaces as
-//! [`Error::Api`] with `status == 429`.
+//! Endpoints are tagged **Light** (1 req/sec), **Heavy** (1 req / 5 sec),
+//! or **VeryHeavy** (1 req/min, internal only). The API returns HTTP 429
+//! when you exceed the limit; this surfaces as [`Error::RateLimit`] with
+//! a typed `retry_after_seconds` field.
 
 #![deny(missing_docs)]
 
@@ -42,13 +43,42 @@ pub enum Error {
     /// Transport-level HTTP error (DNS, TLS, connection reset, etc.).
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-    /// The API returned a non-2xx status. `details` contains the parsed
-    /// JSON error body if the server provided one.
+    /// HTTP 401 — missing or invalid API key.
+    #[error("Noesis 401 Unauthorized: {message}")]
+    Unauthorized {
+        /// Server-provided message (from the JSON body's `error` field).
+        message: String,
+    },
+    /// HTTP 404 — unknown address, token, or route.
+    #[error("Noesis 404 Not Found: {message}")]
+    NotFound {
+        /// Server-provided message (from the JSON body's `error` field).
+        message: String,
+    },
+    /// HTTP 429 — rate limit exceeded. Respect `retry_after_seconds`
+    /// before retrying. Falls back to the `Retry-After` response header
+    /// when the body omits the field.
+    #[error("Noesis 429 rate limited ({limit:?}); retry in {retry_after_seconds:?}s")]
+    RateLimit {
+        /// Seconds to wait before retrying, if known.
+        retry_after_seconds: Option<u64>,
+        /// Human-readable limit string, e.g. `"1 request/5 seconds"`.
+        limit: Option<String>,
+        /// Weight class of the throttled endpoint: `Light`, `Heavy`,
+        /// or `VeryHeavy`.
+        limit_type: Option<String>,
+        /// Whether the request was authenticated as a web user (different
+        /// rate-limit bucket).
+        signed_in: Option<bool>,
+        /// Parsed JSON body from the server, if any.
+        details: Option<Value>,
+    },
+    /// Any other non-2xx status the server returned.
     #[error("Noesis API error {status}: {message}")]
     Api {
-        /// HTTP status code (e.g. 401, 404, 429).
+        /// HTTP status code.
         status: u16,
-        /// Short message summarising the error.
+        /// Short message — the server's `error` field when available.
         message: String,
         /// Parsed JSON body from the server, if any.
         details: Option<Value>,
@@ -209,14 +239,57 @@ impl Noesis {
     async fn handle(res: reqwest::Response) -> Result<Value> {
         let status = res.status();
         if status.is_success() {
-            Ok(res.json().await?)
-        } else {
-            let details = res.json::<Value>().await.ok();
-            Err(Error::Api {
-                status: status.as_u16(),
-                message: format!("Noesis API error {}", status.as_u16()),
+            return Ok(res.json().await?);
+        }
+
+        // Grab Retry-After BEFORE consuming the body.
+        let retry_hdr: Option<u64> = res.headers()
+            .get(reqwest::header::RETRY_AFTER)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok());
+
+        let details = res.json::<Value>().await.ok();
+        let body_msg = details.as_ref()
+            .and_then(|v| v.get("error"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+
+        match status.as_u16() {
+            401 => Err(Error::Unauthorized {
+                message: body_msg.unwrap_or_else(|| "unauthorized".into()),
+            }),
+            404 => Err(Error::NotFound {
+                message: body_msg.unwrap_or_else(|| "not found".into()),
+            }),
+            429 => {
+                let body = details.as_ref();
+                let retry_body = body
+                    .and_then(|v| v.get("retry_after_seconds"))
+                    .and_then(|v| v.as_u64());
+                let limit = body
+                    .and_then(|v| v.get("limit"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let limit_type = body
+                    .and_then(|v| v.get("type"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                let signed_in = body
+                    .and_then(|v| v.get("signed_in"))
+                    .and_then(|v| v.as_bool());
+                Err(Error::RateLimit {
+                    retry_after_seconds: retry_body.or(retry_hdr),
+                    limit,
+                    limit_type,
+                    signed_in,
+                    details,
+                })
+            }
+            code => Err(Error::Api {
+                status: code,
+                message: body_msg.unwrap_or_else(|| format!("Noesis API error {code}")),
                 details,
-            })
+            }),
         }
     }
 

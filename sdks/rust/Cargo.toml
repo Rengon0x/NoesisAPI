@@ -1,6 +1,6 @@
 [package]
 name = "noesis-api"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Noesis"]
 description = "Official Rust SDK for the Noesis on-chain intelligence API — Solana token & wallet analytics."

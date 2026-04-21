@@ -23,7 +23,7 @@ Or add to `Cargo.toml`:
 
 ```toml
 [dependencies]
-noesis-api = "0.1"
+noesis-api = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
@@ -33,7 +33,7 @@ tokio = { version = "1", features = ["full"] }
 use noesis_api::Noesis;
 
 #[tokio::main]
-async fn main() -> Result<(), noesis::Error> {
+async fn main() -> Result<(), noesis_api::Error> {
     let client = Noesis::new(std::env::var("NOESIS_API_KEY").unwrap());
 
     let preview = client.token_preview("<MINT>").await?;
@@ -94,6 +94,32 @@ client.account(addr).await?;
 client.accounts_batch(&addresses).await?;
 client.parse_transactions(&signatures).await?;
 ```
+
+## Error handling
+
+Non-2xx responses surface as typed [`noesis_api::Error`] variants:
+
+```rust
+use noesis_api::{Noesis, Error};
+
+let client = Noesis::new("se_...");
+match client.token_preview("<MINT>").await {
+    Ok(data) => { /* ... */ }
+    Err(Error::RateLimit { retry_after_seconds, limit, limit_type, signed_in, .. }) => {
+        // limit      == Some("1 request/5 seconds")
+        // limit_type == Some("Heavy")
+        // signed_in  == Some(false)
+        let wait = retry_after_seconds.unwrap_or(5);
+        tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+    }
+    Err(Error::Unauthorized { .. }) => eprintln!("Invalid or missing API key"),
+    Err(Error::NotFound { .. })     => eprintln!("Wallet/token/route not found"),
+    Err(e) => eprintln!("Other error: {e}"),
+}
+```
+
+`retry_after_seconds` reads the JSON body, then falls back to the
+`Retry-After` response header.
 
 ## Custom base URL
 
