@@ -4,10 +4,53 @@ export interface NoesisConfig {
   fetch?: typeof fetch;
 }
 
-export interface NoesisError {
-  status: number;
-  message: string;
-  details?: unknown;
+/**
+ * Error thrown by the Noesis SDK for any non-2xx HTTP response.
+ *
+ * A real `Error` subclass so `instanceof` and stack traces work. For rate
+ * limits, check `err.retryAfterSeconds`; for auth failures, check
+ * `err.status === 401`.
+ */
+export class NoesisError extends Error {
+  /** HTTP status code returned by the Noesis API. */
+  readonly status: number;
+  /** Parsed JSON error body if the server returned one. */
+  readonly details?: unknown;
+  /** Seconds to wait before retrying (429 only). Read from the body's
+   *  `retry_after_seconds` field or the `Retry-After` response header. */
+  readonly retryAfterSeconds?: number;
+  /** Human-readable limit string on 429, e.g. `"1 request/5 seconds"`. */
+  readonly limit?: string;
+  /** Weight class of the throttled endpoint on 429: `Light`, `Heavy`,
+   *  or `VeryHeavy`. */
+  readonly limitType?: string;
+  /** Whether the request was authenticated as a signed-in web user
+   *  (429 only; affects which rate-limit bucket applied). */
+  readonly signedIn?: boolean;
+
+  constructor(opts: {
+    status: number;
+    message: string;
+    details?: unknown;
+    retryAfterSeconds?: number;
+    limit?: string;
+    limitType?: string;
+    signedIn?: boolean;
+  }) {
+    super(opts.message);
+    this.name = "NoesisError";
+    this.status = opts.status;
+    this.details = opts.details;
+    this.retryAfterSeconds = opts.retryAfterSeconds;
+    this.limit = opts.limit;
+    this.limitType = opts.limitType;
+    this.signedIn = opts.signedIn;
+  }
+
+  /** Convenience check: true when this is a 429 rate-limit error. */
+  get isRateLimit(): boolean {
+    return this.status === 429;
+  }
 }
 
 export interface SSEMessage {
@@ -63,6 +106,38 @@ export class Noesis {
     this.chain = new ChainClient(http);
     this.streams = new StreamsClient(http);
   }
+}
+
+/**
+ * Parse a non-2xx `fetch` response into a typed `NoesisError`.
+ * Reads both the JSON body envelope (`{error, limit, type, retry_after_seconds, signed_in}`)
+ * and the `Retry-After` header as a fallback for `retryAfterSeconds`.
+ */
+async function buildError(res: Response): Promise<NoesisError> {
+  let details: unknown;
+  try { details = await res.json(); } catch { /* non-JSON body — leave undefined */ }
+
+  const body = (details ?? {}) as Record<string, unknown>;
+  const serverMsg = typeof body.error === "string" ? (body.error as string) : undefined;
+  const retryFromBody = typeof body.retry_after_seconds === "number"
+    ? (body.retry_after_seconds as number)
+    : undefined;
+  const retryFromHeader = (() => {
+    const h = res.headers.get("retry-after");
+    if (!h) return undefined;
+    const n = Number(h);
+    return Number.isFinite(n) ? n : undefined;
+  })();
+
+  return new NoesisError({
+    status: res.status,
+    message: serverMsg ?? `Noesis API error ${res.status}`,
+    details,
+    retryAfterSeconds: retryFromBody ?? retryFromHeader,
+    limit: typeof body.limit === "string" ? (body.limit as string) : undefined,
+    limitType: typeof body.type === "string" ? (body.type as string) : undefined,
+    signedIn: typeof body.signed_in === "boolean" ? (body.signed_in as boolean) : undefined,
+  });
 }
 
 class HttpClient {
@@ -132,16 +207,7 @@ class HttpClient {
           headers: { "X-API-Key": apiKey, accept: "text/event-stream" },
           signal: controller.signal,
         });
-        if (!res.ok || !res.body) {
-          let details: unknown;
-          try { details = await res.json(); } catch { /* ignore */ }
-          const err: NoesisError = {
-            status: res.status,
-            message: `Noesis API error ${res.status}`,
-            details,
-          };
-          throw err;
-        }
+        if (!res.ok || !res.body) throw await buildError(res);
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -214,16 +280,7 @@ class HttpClient {
   }
 
   private async parse<T>(res: Response): Promise<T> {
-    if (!res.ok) {
-      let details: unknown;
-      try { details = await res.json(); } catch { /* ignore */ }
-      const err: NoesisError = {
-        status: res.status,
-        message: `Noesis API error ${res.status}`,
-        details,
-      };
-      throw err;
-    }
+    if (!res.ok) throw await buildError(res);
     return (await res.json()) as T;
   }
 }

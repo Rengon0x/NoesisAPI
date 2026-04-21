@@ -1,6 +1,6 @@
 {
   "name": "noesis-api",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Official TypeScript SDK for the Noesis on-chain intelligence API — Solana token & wallet analytics.",
   "keywords": [
     "solana",

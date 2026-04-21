@@ -18,8 +18,9 @@ info:
 
     ## Rate Limiting
 
-    Endpoints are classified as **Light** (1 request/second) or **Heavy** (1 request/minute).
-    Exceeding limits returns HTTP 429 with details about the limit and type.
+    Endpoints are classified as **Light** (1 request/second) or **Heavy** (1 request / 5 seconds).
+    Exceeding limits returns HTTP 429 with `Retry-After` header and JSON body
+    `{error, limit, type, retry_after_seconds, signed_in}`.
 
     ## Chain Support
 
@@ -55,6 +56,8 @@ tags:
     description: Solana RPC and DAS API proxy
   - name: AI Chat
     description: AI-powered on-chain research assistant
+  - name: Streams
+    description: Server-Sent Events streams for real-time on-chain activity
 
 paths:
   # ──────────────────────────────────────────────
@@ -1990,6 +1993,101 @@ paths:
                   active_now:
                     type: integer
                     example: 3
+
+  # ──────────────────────────────────────────────
+  # Streams (SSE)
+  # ──────────────────────────────────────────────
+  /api/v1/stream/pumpfun/new-tokens:
+    get:
+      operationId: streamPumpfunNewTokens
+      tags: [Streams]
+      summary: Live stream of newly created pump.fun tokens
+      description: |
+        Server-Sent Events stream. Each `event: newToken` carries a JSON
+        payload with the new pump.fun token. Open a single long-lived
+        connection — the server keeps it alive with periodic comments.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Open SSE stream (content-type `text/event-stream`)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  Framed as standard SSE:
+                  ```
+                  event: newToken
+                  data: {"mint":"...","name":"...","symbol":"..."}
+                  ```
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/stream/pumpfun/migrations:
+    get:
+      operationId: streamPumpfunMigrations
+      tags: [Streams]
+      summary: Live stream of pump.fun bonding-curve graduations
+      description: |
+        Server-Sent Events stream of pump.fun tokens that graduate from
+        the bonding curve (`~$69K mcap`). Each `event: migration` carries
+        the migrating token's mint and pool info.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Open SSE stream (content-type `text/event-stream`)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/stream/raydium/new-pools:
+    get:
+      operationId: streamRaydiumNewPools
+      tags: [Streams]
+      summary: Live stream of newly created Raydium pools
+      description: |
+        Server-Sent Events stream. Each `event: newPool` carries the new
+        Raydium pool's address and both token mints.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Open SSE stream (content-type `text/event-stream`)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/stream/meteora/new-pools:
+    get:
+      operationId: streamMeteoraNewPools
+      tags: [Streams]
+      summary: Live stream of newly created Meteora pools
+      description: |
+        Server-Sent Events stream. Each `event: newPool` carries the new
+        Meteora pool's address and both token mints.
+      x-rate-limit: Light
+      security:
+        - ApiKey: []
+      responses:
+        "200":
+          description: Open SSE stream (content-type `text/event-stream`)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
 # ════════════════════════════════════════════════
 # Components

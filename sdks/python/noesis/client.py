@@ -18,11 +18,55 @@ TxSource = Literal[
 
 
 class NoesisError(Exception):
+    """Base error for any non-2xx response from the Noesis API.
+
+    Catch specific subclasses (`NoesisAuthError`, `NoesisNotFoundError`,
+    `NoesisRateLimitError`) for typed handling, or catch `NoesisError` to
+    cover everything. `status` is always populated; `details` holds the
+    parsed JSON body when one was returned.
+    """
+
     def __init__(self, status: int, message: str, details: Any = None):
         super().__init__(f"[{status}] {message}")
         self.status = status
         self.message = message
         self.details = details
+
+
+class NoesisAuthError(NoesisError):
+    """Raised on HTTP 401 — missing or invalid API key."""
+
+
+class NoesisNotFoundError(NoesisError):
+    """Raised on HTTP 404 — unknown address, token, or route."""
+
+
+class NoesisRateLimitError(NoesisError):
+    """Raised on HTTP 429. Check `retry_after_seconds` before retrying.
+
+    `retry_after_seconds` falls back to the `Retry-After` response header
+    when the JSON body omits it. `limit` is a human-readable string like
+    ``"1 request/5 seconds"``; `limit_type` is one of ``"Light"``, ``"Heavy"``,
+    ``"VeryHeavy"``; `signed_in` indicates whether the request was
+    authenticated as a web user (different rate-limit bucket).
+    """
+
+    def __init__(
+        self,
+        status: int,
+        message: str,
+        details: Any = None,
+        *,
+        retry_after_seconds: Optional[int] = None,
+        limit: Optional[str] = None,
+        limit_type: Optional[str] = None,
+        signed_in: Optional[bool] = None,
+    ):
+        super().__init__(status, message, details)
+        self.retry_after_seconds = retry_after_seconds
+        self.limit = limit
+        self.limit_type = limit_type
+        self.signed_in = signed_in
 
 
 class Noesis:
@@ -62,14 +106,45 @@ class Noesis:
         self.close()
 
 
+def _raise_from_response(res: httpx.Response) -> None:
+    """Parse a non-2xx response body + headers into a typed ``NoesisError``."""
+    details: Any = None
+    try:
+        details = res.json()
+    except Exception:  # noqa: BLE001 — non-JSON body is fine
+        pass
+
+    body = details if isinstance(details, dict) else {}
+    server_msg = body.get("error") if isinstance(body.get("error"), str) else None
+    message = server_msg or f"Noesis API error {res.status_code}"
+
+    status = res.status_code
+    if status == 429:
+        retry_body = body.get("retry_after_seconds")
+        retry_hdr = res.headers.get("retry-after")
+        try:
+            retry_after = int(retry_body) if retry_body is not None else (
+                int(retry_hdr) if retry_hdr is not None else None
+            )
+        except (TypeError, ValueError):
+            retry_after = None
+        raise NoesisRateLimitError(
+            status, message, details,
+            retry_after_seconds=retry_after,
+            limit=body.get("limit") if isinstance(body.get("limit"), str) else None,
+            limit_type=body.get("type") if isinstance(body.get("type"), str) else None,
+            signed_in=body.get("signed_in") if isinstance(body.get("signed_in"), bool) else None,
+        )
+    if status == 401:
+        raise NoesisAuthError(status, message, details)
+    if status == 404:
+        raise NoesisNotFoundError(status, message, details)
+    raise NoesisError(status, message, details)
+
+
 def _handle(res: httpx.Response) -> Any:
     if res.is_error:
-        details: Any = None
-        try:
-            details = res.json()
-        except Exception:
-            pass
-        raise NoesisError(res.status_code, f"Noesis API error {res.status_code}", details)
+        _raise_from_response(res)
     return res.json()
 
 
@@ -221,7 +296,10 @@ class _StreamsClient:
     def _stream(self, path: str) -> Iterator[dict]:
         import json
         with httpx.stream("GET", f"{self._base}{path}", headers=self._headers, timeout=None) as r:
-            r.raise_for_status()
+            if r.is_error:
+                # Read the body so _raise_from_response can parse it.
+                r.read()
+                _raise_from_response(r)
             for line in r.iter_lines():
                 if line.startswith("data:"):
                     payload = line[5:].strip()
