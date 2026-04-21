@@ -1,10 +1,10 @@
 <div align="center">
 
-# @noesis/sdk
+# noesis-api
 
 **Official TypeScript SDK for the [Noesis](https://noesisapi.dev) on-chain intelligence API.**
 
-[![npm](https://img.shields.io/npm/v/@noesis/sdk)](https://www.npmjs.com/package/@noesis/sdk)
+[![npm](https://img.shields.io/npm/v/noesis-api)](https://www.npmjs.com/package/noesis-api)
 [![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Website](https://img.shields.io/badge/website-noesisapi.dev-orange)](https://noesisapi.dev)
 
@@ -15,17 +15,17 @@
 ## Install
 
 ```bash
-npm install @noesis/sdk
+npm install noesis-api
 # or
-pnpm add @noesis/sdk
+pnpm add noesis-api
 # or
-yarn add @noesis/sdk
+yarn add noesis-api
 ```
 
 ## Quick start
 
 ```typescript
-import { Noesis } from "@noesis/sdk";
+import { Noesis } from "noesis-api";
 
 const noesis = new Noesis({ apiKey: process.env.NOESIS_API_KEY! });
 
@@ -95,12 +95,25 @@ noesis.chain.parseTransactions(signatures)
 
 ### Live streams (SSE)
 
+Streams are fetch-backed (not native `EventSource`), so the `X-API-Key`
+header travels with the request — authenticated streams work in Node ≥ 18,
+Deno, Bun, and modern browsers.
+
 ```typescript
+// Callback style
 const stream = noesis.streams.pumpfunNewTokens();
 stream.onmessage = (event) => {
   const token = JSON.parse(event.data);
   console.log("New token:", token);
 };
+stream.onerror = (err) => console.error(err);
+// stream.close() when done
+
+// Or async iterator
+for await (const event of noesis.streams.pumpfunMigrations()) {
+  const migration = JSON.parse(event.data);
+  console.log("Migration:", migration);
+}
 ```
 
 Available streams: `pumpfunNewTokens`, `pumpfunMigrations`, `raydiumNewPools`, `meteoraNewPools`.

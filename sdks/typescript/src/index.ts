@@ -10,6 +10,44 @@ export interface NoesisError {
   details?: unknown;
 }
 
+export interface SSEMessage {
+  /** SSE `event:` field. Defaults to `"message"` when unspecified. */
+  type: string;
+  /** SSE `data:` payload as a string. Parse with `JSON.parse` for typed streams. */
+  data: string;
+  /** SSE `id:` field if present. */
+  id?: string;
+}
+
+/**
+ * A fetch-backed SSE stream. Unlike the browser's native `EventSource`,
+ * this sets the `X-API-Key` header so authenticated Noesis streams work
+ * in Node (≥18), Deno, Bun, and modern browsers.
+ *
+ * Usage:
+ *
+ * ```ts
+ * const stream = noesis.streams.pumpfunNewTokens();
+ * stream.onmessage = (ev) => console.log(JSON.parse(ev.data));
+ * // when done:
+ * stream.close();
+ * ```
+ *
+ * Or, idiomatically, with `for await`:
+ *
+ * ```ts
+ * for await (const ev of stream) {
+ *   console.log(JSON.parse(ev.data));
+ * }
+ * ```
+ */
+export interface SSEStream extends AsyncIterable<SSEMessage> {
+  onmessage?: (ev: SSEMessage) => void;
+  onerror?: (err: unknown) => void;
+  /** Abort the underlying fetch and stop emitting events. */
+  close(): void;
+}
+
 export type Chain = "sol" | "base";
 
 export class Noesis {
@@ -65,9 +103,114 @@ class HttpClient {
     return this.parse<T>(res);
   }
 
-  stream(path: string): EventSource {
+  stream(path: string): SSEStream {
     const url = `${this.baseUrl}/api/v1${path}`;
-    return new EventSource(url);
+    const apiKey = this.apiKey;
+    const fetchImpl = this.fetchImpl;
+    const controller = new AbortController();
+
+    const state: { onmessage?: (ev: SSEMessage) => void; onerror?: (err: unknown) => void } = {};
+    const queue: SSEMessage[] = [];
+    const waiters: Array<(v: IteratorResult<SSEMessage>) => void> = [];
+    let done = false;
+
+    const emit = (ev: SSEMessage) => {
+      state.onmessage?.(ev);
+      const w = waiters.shift();
+      if (w) w({ value: ev, done: false });
+      else queue.push(ev);
+    };
+    const finish = () => {
+      if (done) return;
+      done = true;
+      while (waiters.length) waiters.shift()!({ value: undefined as unknown as SSEMessage, done: true });
+    };
+
+    (async () => {
+      try {
+        const res = await fetchImpl(url, {
+          headers: { "X-API-Key": apiKey, accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) {
+          let details: unknown;
+          try { details = await res.json(); } catch { /* ignore */ }
+          const err: NoesisError = {
+            status: res.status,
+            message: `Noesis API error ${res.status}`,
+            details,
+          };
+          throw err;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let evType = "message";
+        let evData: string[] = [];
+        let evId: string | undefined;
+        const flush = () => {
+          if (evData.length) {
+            emit({ type: evType, data: evData.join("\n"), id: evId });
+          }
+          evType = "message";
+          evData = [];
+          evId = undefined;
+        };
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { value, done: streamDone } = await reader.read();
+          if (streamDone) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, idx).replace(/\r$/, "");
+            buffer = buffer.slice(idx + 1);
+            if (line === "") { flush(); continue; }
+            if (line.startsWith(":")) continue;
+            const colon = line.indexOf(":");
+            const field = colon === -1 ? line : line.slice(0, colon);
+            const val = colon === -1 ? "" : line.slice(colon + 1).replace(/^ /, "");
+            if (field === "event") evType = val;
+            else if (field === "data") evData.push(val);
+            else if (field === "id") evId = val;
+          }
+        }
+        flush();
+        finish();
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          finish();
+          return;
+        }
+        state.onerror?.(err);
+        const w = waiters.shift();
+        if (w) w({ value: undefined as unknown as SSEMessage, done: true });
+        finish();
+      }
+    })();
+
+    const stream: SSEStream = {
+      get onmessage() { return state.onmessage; },
+      set onmessage(fn) { state.onmessage = fn; },
+      get onerror() { return state.onerror; },
+      set onerror(fn) { state.onerror = fn; },
+      close() { controller.abort(); finish(); },
+      [Symbol.asyncIterator](): AsyncIterator<SSEMessage> {
+        return {
+          next(): Promise<IteratorResult<SSEMessage>> {
+            if (queue.length) return Promise.resolve({ value: queue.shift()!, done: false });
+            if (done) return Promise.resolve({ value: undefined as unknown as SSEMessage, done: true });
+            return new Promise(resolve => waiters.push(resolve));
+          },
+          return(): Promise<IteratorResult<SSEMessage>> {
+            controller.abort();
+            finish();
+            return Promise.resolve({ value: undefined as unknown as SSEMessage, done: true });
+          },
+        };
+      },
+    };
+    return stream;
   }
 
   private async parse<T>(res: Response): Promise<T> {

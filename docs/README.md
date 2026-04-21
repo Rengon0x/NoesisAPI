@@ -19,14 +19,14 @@
 - [Rate limits](./guides/rate-limits.md)
 
 ### Concepts
-- [What is a fresh wallet?](./guides/fresh-wallets.md)
-- [How bundle detection works](./guides/bundle-detection.md)
-- [Reading a wallet's funder graph](./guides/funder-graph.md)
-- [Cross-holder vs cross-trader analysis](./guides/cross-analysis.md)
+- [What is a fresh wallet?](./guides/fresh-wallet-detection.md)
+- [How bundle detection works](./guides/detect-bundles-solana.md)
+- [Reading a wallet's connections](./guides/wallet-connections.md)
+- [Cross-token holder analysis](./guides/cross-token-holders.md)
+- [Cross-token trader analysis](./guides/cross-token-traders.md)
 
 ### Integrations
 - [Using Noesis with Claude Desktop (MCP)](./guides/mcp-claude-desktop.md)
-- [Using Noesis with Cursor](./guides/mcp-cursor.md)
 
 ### Reference
 - [OpenAPI spec](https://github.com/Rengon0x/NoesisAPI/blob/main/openapi.yaml)
