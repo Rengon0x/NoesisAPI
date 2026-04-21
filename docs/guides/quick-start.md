@@ -21,9 +21,9 @@ You should get back a JSON response with price, market cap, liquidity, and holde
 
 Instead of raw HTTP, use one of the official SDKs:
 
-- **TypeScript**: `npm install @noesis/sdk` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/typescript)
-- **Python**: `pip install noesis` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/python)
-- **Rust**: `cargo add noesis` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/rust)
+- **TypeScript**: `npm install noesis-api` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/typescript)
+- **Python**: `pip install noesis-api` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/python)
+- **Rust**: `cargo add noesis-api` — [docs](https://github.com/Rengon0x/NoesisAPI/tree/main/sdks/rust)
 
 ## 4. Or connect an AI agent
 
