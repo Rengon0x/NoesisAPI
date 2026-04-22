@@ -4,24 +4,34 @@ Noesis endpoints are classified as **Light** or **Heavy**.
 
 ## Limits
 
-| Class | Limit | Applies to |
+| Tier | Limit | Applies to |
 |---|---|---|
 | **Light** | 1 request / second | Simple lookups (previews, chain status, account info) |
 | **Heavy** | 1 request / 5 seconds | Deep analysis (scan, bundles, dev profile, cross-analysis) |
 
 ## Behavior on exceed
 
-Exceeding a limit returns HTTP `429 Too Many Requests` with a JSON body:
+Exceeding a limit returns HTTP `429 Too Many Requests` with a `Retry-After` header and a JSON body:
 
 ```json
 {
-  "error": "rate_limit_exceeded",
-  "class": "heavy",
-  "retry_after_seconds": 4
+  "error": "Rate limit exceeded",
+  "limit": "1 request/5 seconds",
+  "type": "Heavy",
+  "retry_after_seconds": 4,
+  "signed_in": false
 }
 ```
 
-Honor the `retry_after_seconds` field — back off and retry.
+Field reference:
+
+- `error` — human-readable message
+- `limit` — human-readable limit string
+- `type` — tier that was exceeded: `Light` or `Heavy`
+- `retry_after_seconds` — back off this long before retrying (also sent as the `Retry-After` response header)
+- `signed_in` — whether the request used a signed-in web session (different rate-limit bucket)
+
+Honor `retry_after_seconds` — back off and retry.
 
 ## Handling retries
 
