@@ -111,6 +111,40 @@ client.accounts_batch(&addresses).await?;
 client.parse_transactions(&signatures).await?;
 ```
 
+### Live streams (SSE)
+
+Each stream returns an `impl Stream<Item = Result<serde_json::Value>>`.
+Auth errors and transport failures surface as a single `Err` item; the
+stream then ends.
+
+```rust
+use futures_util::StreamExt;
+use noesis_api::Noesis;
+
+#[tokio::main]
+async fn main() -> Result<(), noesis_api::Error> {
+    let client = Noesis::new(std::env::var("NOESIS_API_KEY").unwrap());
+    let mut stream = Box::pin(client.stream_pumpfun_new_tokens());
+
+    while let Some(event) = stream.next().await {
+        match event {
+            Ok(v) => println!("new token: {v}"),
+            Err(e) => { eprintln!("stream ended: {e}"); break; }
+        }
+    }
+    Ok(())
+}
+```
+
+Available streams:
+
+```rust
+client.stream_pumpfun_new_tokens();
+client.stream_pumpfun_migrations();
+client.stream_raydium_new_pools();
+client.stream_meteora_new_pools();
+```
+
 ## Error handling
 
 Non-2xx responses surface as typed [`noesis_api::Error`] variants:
