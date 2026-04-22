@@ -32,6 +32,12 @@
 
 #![deny(missing_docs)]
 
+#[cfg(not(any(feature = "native-tls", feature = "rustls-tls")))]
+compile_error!(
+    "noesis-api requires a TLS backend. Enable the default `native-tls` feature \
+     or opt into `rustls-tls`: `noesis-api = { version = \"0.3\", default-features = false, features = [\"rustls-tls\"] }`"
+);
+
 use serde_json::Value;
 use thiserror::Error;
 

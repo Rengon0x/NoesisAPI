@@ -27,6 +27,22 @@ noesis-api = "0.3"
 tokio = { version = "1", features = ["full"] }
 ```
 
+**MSRV**: Rust 1.75+.
+
+### TLS backend
+
+The default TLS backend is `native-tls` (OpenSSL on most platforms). For a pure-Rust build — useful for `musl` / Alpine / `scratch` Docker images, or projects that already use `rustls` — opt into `rustls-tls`:
+
+```toml
+[dependencies]
+noesis-api = { version = "0.3", default-features = false, features = ["rustls-tls"] }
+```
+
+Feature flags:
+
+- `native-tls` *(default)* — links against the system's native TLS stack
+- `rustls-tls` — pure-Rust TLS via `rustls` + `webpki-roots`
+
 ## Quick start
 
 ```rust

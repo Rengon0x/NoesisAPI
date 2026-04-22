@@ -1,6 +1,7 @@
 """Noesis — Official Python SDK for the Noesis on-chain intelligence API."""
 
 from .client import (
+    AsyncNoesis,
     Noesis,
     NoesisAuthError,
     NoesisError,
@@ -10,9 +11,10 @@ from .client import (
 
 __all__ = [
     "Noesis",
+    "AsyncNoesis",
     "NoesisError",
     "NoesisAuthError",
     "NoesisNotFoundError",
     "NoesisRateLimitError",
 ]
-__version__ = "0.3.0"
+__version__ = "0.3.1"
