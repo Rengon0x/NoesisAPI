@@ -29,6 +29,13 @@
 //! or **VeryHeavy** (1 req/min, internal only). The API returns HTTP 429
 //! when you exceed the limit; this surfaces as [`Error::RateLimit`] with
 //! a typed `retry_after_seconds` field.
+//!
+//! # Live streams
+//!
+//! Four SSE endpoints are exposed as `impl Stream<Item = Result<Value>>`:
+//! [`Noesis::stream_pumpfun_new_tokens`], [`Noesis::stream_pumpfun_migrations`],
+//! [`Noesis::stream_raydium_new_pools`], [`Noesis::stream_meteora_new_pools`].
+//! Consume with [`futures_util::StreamExt::next`].
 
 #![deny(missing_docs)]
 
@@ -38,6 +45,9 @@ compile_error!(
      or opt into `rustls-tls`: `noesis-api = { version = \"0.3\", default-features = false, features = [\"rustls-tls\"] }`"
 );
 
+use async_stream::stream;
+use futures_core::Stream;
+use futures_util::StreamExt;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -96,6 +106,62 @@ pub enum Error {
 
 /// Convenience `Result` alias with the crate error type.
 pub type Result<T> = std::result::Result<T, Error>;
+
+// Maps a non-success `reqwest::Response` into a typed `Error`.
+// Reads `Retry-After` before consuming the body so it's still available
+// for 429 responses that also set the header.
+async fn error_from_response(res: reqwest::Response) -> Error {
+    let status = res.status();
+
+    let retry_hdr: Option<u64> = res.headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+
+    let details = res.json::<Value>().await.ok();
+    let body_msg = details.as_ref()
+        .and_then(|v| v.get("error"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
+
+    match status.as_u16() {
+        401 => Error::Unauthorized {
+            message: body_msg.unwrap_or_else(|| "unauthorized".into()),
+        },
+        404 => Error::NotFound {
+            message: body_msg.unwrap_or_else(|| "not found".into()),
+        },
+        429 => {
+            let body = details.as_ref();
+            let retry_body = body
+                .and_then(|v| v.get("retry_after_seconds"))
+                .and_then(|v| v.as_u64());
+            let limit = body
+                .and_then(|v| v.get("limit"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let limit_type = body
+                .and_then(|v| v.get("type"))
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+            let signed_in = body
+                .and_then(|v| v.get("signed_in"))
+                .and_then(|v| v.as_bool());
+            Error::RateLimit {
+                retry_after_seconds: retry_body.or(retry_hdr),
+                limit,
+                limit_type,
+                signed_in,
+                details,
+            }
+        }
+        code => Error::Api {
+            status: code,
+            message: body_msg.unwrap_or_else(|| format!("Noesis API error {code}")),
+            details,
+        },
+    }
+}
 
 /// Chain identifier. Noesis supports Solana and Base.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,60 +309,10 @@ impl Noesis {
     }
 
     async fn handle(res: reqwest::Response) -> Result<Value> {
-        let status = res.status();
-        if status.is_success() {
+        if res.status().is_success() {
             return Ok(res.json().await?);
         }
-
-        // Grab Retry-After BEFORE consuming the body.
-        let retry_hdr: Option<u64> = res.headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok());
-
-        let details = res.json::<Value>().await.ok();
-        let body_msg = details.as_ref()
-            .and_then(|v| v.get("error"))
-            .and_then(|v| v.as_str())
-            .map(str::to_string);
-
-        match status.as_u16() {
-            401 => Err(Error::Unauthorized {
-                message: body_msg.unwrap_or_else(|| "unauthorized".into()),
-            }),
-            404 => Err(Error::NotFound {
-                message: body_msg.unwrap_or_else(|| "not found".into()),
-            }),
-            429 => {
-                let body = details.as_ref();
-                let retry_body = body
-                    .and_then(|v| v.get("retry_after_seconds"))
-                    .and_then(|v| v.as_u64());
-                let limit = body
-                    .and_then(|v| v.get("limit"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string);
-                let limit_type = body
-                    .and_then(|v| v.get("type"))
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string);
-                let signed_in = body
-                    .and_then(|v| v.get("signed_in"))
-                    .and_then(|v| v.as_bool());
-                Err(Error::RateLimit {
-                    retry_after_seconds: retry_body.or(retry_hdr),
-                    limit,
-                    limit_type,
-                    signed_in,
-                    details,
-                })
-            }
-            code => Err(Error::Api {
-                status: code,
-                message: body_msg.unwrap_or_else(|| format!("Noesis API error {code}")),
-                details,
-            }),
-        }
+        Err(error_from_response(res).await)
     }
 
     // ─── Token ──────────────────────────────────────────────────────
@@ -438,5 +454,79 @@ impl Noesis {
     /// Parse up to 100 transaction signatures into human-readable events. **Light** rate limit.
     pub async fn parse_transactions(&self, signatures: &[String]) -> Result<Value> {
         self.post("/transactions/parse", &serde_json::json!({ "transactions": signatures })).await
+    }
+
+    // ─── SSE Streams ────────────────────────────────────────────────
+
+    /// Live stream of new PumpFun token creations.
+    ///
+    /// Yields one [`Value`] per SSE event. Consume with
+    /// [`futures_util::StreamExt::next`] or `tokio_stream::StreamExt`. Auth
+    /// errors and transport failures surface as [`Err`] items — the stream
+    /// ends after the first such error.
+    pub fn stream_pumpfun_new_tokens(&self) -> impl Stream<Item = Result<Value>> + 'static {
+        self.sse_stream("/stream/pumpfun/new-tokens")
+    }
+
+    /// Live stream of PumpFun bonding-curve migrations (graduations).
+    pub fn stream_pumpfun_migrations(&self) -> impl Stream<Item = Result<Value>> + 'static {
+        self.sse_stream("/stream/pumpfun/migrations")
+    }
+
+    /// Live stream of new Raydium pools.
+    pub fn stream_raydium_new_pools(&self) -> impl Stream<Item = Result<Value>> + 'static {
+        self.sse_stream("/stream/raydium/new-pools")
+    }
+
+    /// Live stream of new Meteora pools.
+    pub fn stream_meteora_new_pools(&self) -> impl Stream<Item = Result<Value>> + 'static {
+        self.sse_stream("/stream/meteora/new-pools")
+    }
+
+    fn sse_stream(&self, path: &str) -> impl Stream<Item = Result<Value>> + 'static {
+        let url = format!("{}/api/v1{}", self.base_url, path);
+        let http = self.http.clone();
+        let api_key = self.api_key.clone();
+
+        stream! {
+            let res = match http.get(&url)
+                .header("X-API-Key", &api_key)
+                .header("Accept", "text/event-stream")
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => { yield Err(Error::Http(e)); return; }
+            };
+
+            if !res.status().is_success() {
+                yield Err(error_from_response(res).await);
+                return;
+            }
+
+            let mut bytes_stream = res.bytes_stream();
+            let mut buf: Vec<u8> = Vec::new();
+
+            while let Some(chunk) = bytes_stream.next().await {
+                let chunk = match chunk {
+                    Ok(c) => c,
+                    Err(e) => { yield Err(Error::Http(e)); return; }
+                };
+                buf.extend_from_slice(&chunk);
+
+                while let Some(idx) = buf.iter().position(|&b| b == b'\n') {
+                    let line_bytes: Vec<u8> = buf.drain(..=idx).collect();
+                    let Ok(line) = std::str::from_utf8(&line_bytes) else { continue };
+                    let line = line.trim_end_matches(['\r', '\n']);
+                    let Some(payload) = line.strip_prefix("data:") else { continue };
+                    let payload = payload.trim();
+                    if payload.is_empty() { continue; }
+                    match serde_json::from_str::<Value>(payload) {
+                        Ok(v) => yield Ok(v),
+                        Err(_) => yield Ok(serde_json::json!({ "raw": payload })),
+                    }
+                }
+            }
+        }
     }
 }
