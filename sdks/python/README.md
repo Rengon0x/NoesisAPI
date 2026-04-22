@@ -19,6 +19,8 @@
 pip install noesis-api
 ```
 
+Fully type-hinted (PEP 561) — mypy, pyright, and Pylance see the annotations out of the box.
+
 ## Quick start
 
 ```python
@@ -40,6 +42,27 @@ print(bundles)
 ```
 
 Get an API key at [noesisapi.dev/keys](https://noesisapi.dev/keys).
+
+## Async
+
+`AsyncNoesis` mirrors the sync client. Every method is `async`; streams are async generators.
+
+```python
+import asyncio
+from noesis import AsyncNoesis
+
+async def main():
+    async with AsyncNoesis(api_key="se_...") as client:
+        preview = await client.token.preview("<MINT>")
+        print(preview)
+
+        async for token in client.streams.pumpfun_new_tokens():
+            print("New token:", token)
+
+asyncio.run(main())
+```
+
+Use this inside FastAPI handlers, Jupyter cells, or any `asyncio` program.
 
 ## Live streams
 
