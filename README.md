@@ -113,13 +113,38 @@ Full reference: [noesisapi.dev/docs](https://noesisapi.dev/docs) · [OpenAPI spe
 
 ## Rate limits
 
+Two layers apply to every authenticated API key. Noesis is free during beta — these are abuse-prevention caps, not pricing.
+
+**1. Per-second request rate**
+
 - **Light** endpoints: 1 request/second
 - **Heavy** endpoints: 1 request / 5 seconds
 
-Exceeding limits returns `429` with a `Retry-After` header and a JSON
-body: `{error, limit, type, retry_after_seconds, signed_in}`. All three
-SDKs surface this as a typed rate-limit error with
-`retry_after_seconds` as a first-class field.
+Exceeding returns `429` with a `Retry-After` header and a JSON body: `{error, limit, type, retry_after_seconds, signed_in}`. All three SDKs surface this as a typed rate-limit error with `retry_after_seconds` as a first-class field.
+
+**2. Per-wallet daily + monthly usage cap** *(soft-launch — counters live, hard cap not yet enforced)*
+
+Each owner wallet has a usage budget shared across all of its API keys, so creating extra keys doesn't multiply your allowance.
+
+- **500 units/day, 10,000 units/month** per wallet
+- **Heavy** endpoints (best-traders, top-holders, bundles, fresh-wallets, team-supply, dev-profile, early-buyers, entry-price, batch-identity, wallet/connections): **10 units** each
+- **Light** endpoints (preview, info, ticker/resolve, basic wallet): **1 unit** each
+- **SSE streams**: **0 units** (no per-request cost)
+- **MCP requests**: **10 units** each (one heavy call per request)
+
+Every API response carries headers so you can pace yourself:
+
+```
+X-Credits-Limit: 500
+X-Credits-Used: 32
+X-Credits-Remaining: 468
+X-Credits-Month-Limit: 10000
+X-Credits-Month-Used: 32
+```
+
+**Bypassed**: signed-in web sessions (in-app at noesisapi.dev) and the Telegram bot. The cap only applies to direct API / SDK / MCP traffic.
+
+Need more headroom? DM [@Rengon0x](https://t.me/Rengon0x) on Telegram or X.
 
 ## Status
 
